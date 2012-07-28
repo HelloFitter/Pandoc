@@ -77,6 +77,13 @@ module Text.Pandoc.Parsing ( (>>~),
                              macro,
                              applyMacros',
                              Parser,
+                             pushEndline,
+                             popEndline,
+                             withEndline,
+                             pushBlockSep,
+                             popBlockSep,
+                             withBlockSep,
+                             pBlockSep,
                              -- * Re-exports from Text.Pandoc.Parsec
                              runParser,
                              parse,
@@ -144,8 +151,10 @@ import Text.Pandoc.Shared
 import qualified Data.Map as M
 import Text.TeXMath.Macros (applyMacros, Macro, parseMacroDefinitions)
 import Text.HTML.TagSoup.Entity ( lookupEntity )
+import Control.Applicative ((<$), (*>), (<*))
+import Data.Traversable (sequenceA)
 import Data.Default
-import Data.Sequence (Seq)
+import Data.Sequence (Seq, ViewR(..), viewr, (|>))
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
@@ -944,44 +953,44 @@ applyMacros' target = do
              return $ applyMacros macros target
      else return target
 
----- pandoc2 block sep/line end parsers
-{-
+-- Parsers for handling nested indented contexts (blockquotes,
+-- lists, etc.) in markdown.
 
 -- | Push parser onto stack of endline parsers.
 -- These are applied after a newline within a block.
-pushEndline :: Parser t () -> Parser t ()
-pushEndline p = modifyState $ \st -> st{ sEndline = sEndline st |> p }
+pushEndline :: Parser [Char] ParserState () -> Parser [Char] ParserState ()
+pushEndline p = modifyState $ \st -> st{ stateEndline = stateEndline st |> p }
 
 -- | Pop parser off stack of endline parsers.
-popEndline :: Parser t ()
+popEndline :: Parser [Char] ParserState ()
 popEndline = do
   st <- getState
-  case viewr (sEndline st) of
-        EmptyR  -> logM ERROR "Tried to pop empty pEndline stack"
-        ps :> _ -> setState st{ sEndline = ps }
+  case viewr (stateEndline st) of
+        EmptyR  -> error "Tried to pop empty pEndline stack"  -- TODO
+        ps :> _ -> setState st{ stateEndline = ps }
 
 -- | Apply a parser in a context with a specified endline parser.
-withEndline :: Parser t a -> Parser t b -> Parser t b
+withEndline :: Parser [Char] ParserState a -> Parser [Char] ParserState b -> Parser [Char] ParserState b
 withEndline sep p = pushEndline (() <$ sep) *> p <* popEndline
 
 -- | Push parser onto stack of block separator parsers.
 -- These are applied after a newline following a block.
-pushBlockSep :: Parser t () -> Parser t ()
-pushBlockSep p = modifyState $ \st -> st{ sBlockSep = sBlockSep st |> p }
+pushBlockSep :: Parser [Char] ParserState () -> Parser [Char] ParserState ()
+pushBlockSep p = modifyState $ \st ->
+  st{ stateBlockSep = stateBlockSep st |> p }
 
 -- | Pop parser off of stack of block separator parsers.
-popBlockSep :: Parser t ()
+popBlockSep :: Parser [Char] ParserState ()
 popBlockSep = do
   st <- getState
-  case viewr (sBlockSep st) of
-        EmptyR  -> logM ERROR "Tried to pop empty pBlockSep stack"
-        ps :> _ -> setState st{ sBlockSep = ps }
+  case viewr (stateBlockSep st) of
+        EmptyR  -> error "Tried to pop empty pBlockSep stack" -- TODO
+        ps :> _ -> setState st{ stateBlockSep = ps }
 
 -- | Apply a parser in a context with specified block separator parser.
-withBlockSep :: Parser t a -> Parser t b -> Parser t b
+withBlockSep :: Parser [Char] ParserState a -> Parser [Char] ParserState b -> Parser [Char] ParserState b
 withBlockSep sep p = pushBlockSep (() <$ sep) *> p <* popBlockSep
 
 -- | Parse a block separator.
-pBlockSep :: Parser t ()
-pBlockSep = try (getState >>= sequenceA . sBlockSep) >> return ()
--}
+pBlockSep :: Parser [Char] ParserState ()
+pBlockSep = try (getState >>= sequenceA . stateBlockSep) >> return ()
