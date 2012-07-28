@@ -145,6 +145,8 @@ import qualified Data.Map as M
 import Text.TeXMath.Macros (applyMacros, Macro, parseMacroDefinitions)
 import Text.HTML.TagSoup.Entity ( lookupEntity )
 import Data.Default
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
 type Parser t s = Parsec t s
@@ -686,6 +688,8 @@ testStringWith parser str = UTF8.putStrLn $ show $
 -- | Parsing options.
 data ParserState = ParserState
     { stateOptions         :: ReaderOptions, -- ^ User options
+      stateEndline         :: Seq (Parser [Char] ParserState ()),
+      stateBlockSep        :: Seq (Parser [Char] ParserState ()),
       stateParserContext   :: ParserContext, -- ^ Inside list?
       stateQuoteContext    :: QuoteContext,  -- ^ Inside quoted environment?
       stateMaxNestingLevel :: Int,           -- ^ Max # of nested Strong/Emph
@@ -702,7 +706,6 @@ data ParserState = ParserState
       stateMacros          :: [Macro],       -- ^ List of macros defined so far
       stateRstDefaultRole  :: String         -- ^ Current rST default interpreted text role
     }
-    deriving Show
 
 instance Default ParserState where
   def = defaultParserState
@@ -710,6 +713,8 @@ instance Default ParserState where
 defaultParserState :: ParserState
 defaultParserState =
     ParserState { stateOptions         = def,
+                  stateEndline         = Seq.empty,
+                  stateBlockSep        = Seq.empty,
                   stateParserContext   = NullState,
                   stateQuoteContext    = NoQuote,
                   stateMaxNestingLevel = 6,
@@ -944,11 +949,11 @@ applyMacros' target = do
 
 -- | Push parser onto stack of endline parsers.
 -- These are applied after a newline within a block.
-pushEndline :: PMonad m => P t m () -> P t m ()
+pushEndline :: Parser t () -> Parser t ()
 pushEndline p = modifyState $ \st -> st{ sEndline = sEndline st |> p }
 
 -- | Pop parser off stack of endline parsers.
-popEndline :: PMonad m => P t m ()
+popEndline :: Parser t ()
 popEndline = do
   st <- getState
   case viewr (sEndline st) of
@@ -956,16 +961,16 @@ popEndline = do
         ps :> _ -> setState st{ sEndline = ps }
 
 -- | Apply a parser in a context with a specified endline parser.
-withEndline :: PMonad m => P t m a -> P t m b -> P t m b
+withEndline :: Parser t a -> Parser t b -> Parser t b
 withEndline sep p = pushEndline (() <$ sep) *> p <* popEndline
 
 -- | Push parser onto stack of block separator parsers.
 -- These are applied after a newline following a block.
-pushBlockSep :: PMonad m => P t m () -> P t m ()
+pushBlockSep :: Parser t () -> Parser t ()
 pushBlockSep p = modifyState $ \st -> st{ sBlockSep = sBlockSep st |> p }
 
 -- | Pop parser off of stack of block separator parsers.
-popBlockSep :: PMonad m => P t m ()
+popBlockSep :: Parser t ()
 popBlockSep = do
   st <- getState
   case viewr (sBlockSep st) of
@@ -973,10 +978,10 @@ popBlockSep = do
         ps :> _ -> setState st{ sBlockSep = ps }
 
 -- | Apply a parser in a context with specified block separator parser.
-withBlockSep :: PMonad m => P t m a -> P t m b -> P t m b
+withBlockSep :: Parser t a -> Parser t b -> Parser t b
 withBlockSep sep p = pushBlockSep (() <$ sep) *> p <* popBlockSep
 
 -- | Parse a block separator.
-pBlockSep :: PMonad m => P t m ()
+pBlockSep :: Parser t ()
 pBlockSep = try (getState >>= sequenceA . sBlockSep) >> return ()
 -}
