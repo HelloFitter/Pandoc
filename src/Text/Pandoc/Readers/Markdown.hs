@@ -48,6 +48,7 @@ import Text.Pandoc.Readers.HTML ( htmlTag, htmlInBalanced, isInlineTag, isBlockT
 import Text.Pandoc.XML ( fromEntities )
 import Data.Monoid
 import qualified Data.Sequence as Seq  -- TODO leaky abstraction, need better isNull in Builder
+import Data.Traversable (sequenceA)
 import Control.Applicative ((<$>), (<*), (*>), (<$))
 import Text.HTML.TagSoup
 import Text.HTML.TagSoup.Match (tagOpen)
@@ -277,7 +278,14 @@ noteBlock = try $ do
 --
 
 parseBlocks :: Parser [Char] ParserState (F Blocks)
-parseBlocks = mconcat <$> manyTill block eof
+parseBlocks = option mempty $ mconcat <$> (block `sepBy1` pNewlines)
+
+pNewlines :: Parser [Char] ParserState Int
+pNewlines = length <$> many1 pNewline <* notFollowedBy spnl
+
+-- | block-separating line break
+pNewline :: Parser [Char] ParserState ()
+pNewline = try $ spnl *> pBlockSep
 
 block :: Parser [Char] ParserState (F Blocks)
 block = choice [ codeBlockDelimited
@@ -1330,6 +1338,7 @@ likelyAbbrev x =
 endline :: Parser [Char] ParserState (F Inlines)
 endline = try $ do
   newline
+  getState >>= sequenceA . stateEndline
   notFollowedBy blankline
   guardEnabled Ext_blank_before_blockquote <|> notFollowedBy emailBlockQuoteStart
   guardEnabled Ext_blank_before_header <|> notFollowedBy (char '#') -- atx header
