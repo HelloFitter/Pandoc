@@ -160,7 +160,7 @@ titleLine = try $ do
   char '%'
   skipSpaces
   res <- many $ (notFollowedBy newline >> inline)
-             <|> try (endline >> whitespace)
+             <|> try (softBreak >> whitespace)
   newline
   return $ trimInlinesF $ mconcat res
 
@@ -278,14 +278,14 @@ noteBlock = try $ do
 --
 
 parseBlocks :: Parser [Char] ParserState (F Blocks)
-parseBlocks = option mempty $ mconcat <$> (block `sepBy` pNewlines)
+parseBlocks = option mempty $ mconcat <$> (block `sepBy` hardBreaks)
 
-pNewlines :: Parser [Char] ParserState String
-pNewlines = many pNewline <* notFollowedBy blankline
+hardBreaks :: Parser [Char] ParserState String
+hardBreaks = many hardBreak <* notFollowedBy blankline
 
 -- | block-separating line break
-pNewline :: Parser [Char] ParserState Char
-pNewline = try $ blankline <* pBlockSep
+hardBreak :: Parser [Char] ParserState Char
+hardBreak = try $ blankline <* pBlockSep
 
 block :: Parser [Char] ParserState (F Blocks)
 block = choice [ codeBlockDelimited
@@ -487,7 +487,7 @@ emailBlockQuote :: Parser [Char] ParserState [String]
 emailBlockQuote = try $ do
   emailBlockQuoteStart
   raw <- sepBy (many (nonEndline <|>
-                      (try (endline >> notFollowedBy emailBlockQuoteStart >>
+                      (try (softBreak >> notFollowedBy emailBlockQuoteStart >>
                        return '\n'))))
                (try (newline >> emailBlockQuoteStart))
   newline <|> (eof >> return '\n')
@@ -557,7 +557,7 @@ rawListItem start = try $ do
   return $ concat (first:rest)  ++ blanks
 
 -- continuation of a list item - indented and separated by blankline
--- or (in compact lists) endline.
+-- or (in compact lists) softBreak.
 -- note: nested lists are parsed as continuations
 listContinuation :: Parser [Char] ParserState String
 listContinuation = try $ do
@@ -581,7 +581,7 @@ listItem start = try $ do
   continuations <- many listContinuation
   -- parsing with ListItemState forces markers at beginning of lines to
   -- count as list item markers, even if not separated by blank space.
-  -- see definition of "endline"
+  -- see definition of "softBreak"
   state <- getState
   let oldContext = stateParserContext state
   setState $ state {stateParserContext = ListItemState}
@@ -1113,7 +1113,7 @@ table = try $ do
 inline :: Parser [Char] ParserState (F Inlines)
 inline = choice [ whitespace
                 , str
-                , endline
+                , softBreak
                 , code
                 , fours
                 , strong
@@ -1289,7 +1289,7 @@ subscript = fmap B.subscript <$> try (do
 
 whitespace :: Parser [Char] ParserState (F Inlines)
 whitespace = spaceChar >> return <$> (lb <|> regsp) <?> "whitespace"
-  where lb = spaceChar >> skipMany spaceChar >> option B.space (endline >> return B.linebreak)
+  where lb = spaceChar >> skipMany spaceChar >> option B.space (softBreak >> return B.linebreak)
         regsp = skipMany spaceChar >> return B.space
 
 nonEndline :: Parser [Char] st Char
@@ -1335,8 +1335,8 @@ likelyAbbrev x =
   in  map snd $ filter (\(y,_) -> y == x) abbrPairs
 
 -- an endline character that can be treated as a space, not a structural break
-endline :: Parser [Char] ParserState (F Inlines)
-endline = try $ do
+softBreak :: Parser [Char] ParserState (F Inlines)
+softBreak = try $ do
   newline
   getState >>= sequenceA . stateEndline
   notFollowedBy blankline
