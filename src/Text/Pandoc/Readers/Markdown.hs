@@ -278,14 +278,14 @@ noteBlock = try $ do
 --
 
 parseBlocks :: Parser [Char] ParserState (F Blocks)
-parseBlocks = option mempty $ mconcat <$> (block `sepBy1` pNewlines)
+parseBlocks = option mempty $ mconcat <$> (block `sepBy` pNewlines)
 
 pNewlines :: Parser [Char] ParserState Int
-pNewlines = length <$> many1 pNewline <* notFollowedBy spnl
+pNewlines = length <$> many pNewline <* notFollowedBy blankline
 
 -- | block-separating line break
 pNewline :: Parser [Char] ParserState ()
-pNewline = try $ spnl *> pBlockSep
+pNewline = try $ blankline *> pBlockSep
 
 block :: Parser [Char] ParserState (F Blocks)
 block = choice [ codeBlockDelimited
