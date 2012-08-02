@@ -136,7 +136,7 @@ atMostSpaces n = (char ' ' >> atMostSpaces (n-1)) <|> return ()
 litChar :: Parser [Char] ParserState Char
 litChar = escapedChar'
        <|> noneOf "\n"
-       <|> (newline >> notFollowedBy blankline >> return ' ')
+       <|> (softBreak >> return ' ')
 
 -- | Parse a sequence of inline elements between square brackets,
 -- including inlines between balanced pairs of square brackets.
@@ -171,7 +171,7 @@ authorsLine = try $ do
   authors <- sepEndBy (many (notFollowedBy (satisfy $ \c ->
                                 c == ';' || c == '\n') >> inline))
                        (char ';' <|>
-                        try (newline >> notFollowedBy blankline >> spaceChar))
+                        try (softBreak >> spaceChar))
   newline
   return $ sequence $ filter (not . isNull) $ map (trimInlinesF . mconcat) authors
 
@@ -187,7 +187,7 @@ titleBlock = try $ do
   title <- option mempty titleLine
   author <- option (return []) authorsLine
   date <- option mempty dateLine
-  optional blanklines
+  optional hardBreaks
   return (title, author, date)
 
 parseMarkdown :: Parser [Char] ParserState Pandoc
@@ -217,7 +217,7 @@ referenceKey = try $ do
   let sourceURL = liftM unwords $ many $ try $ do
                     notFollowedBy' referenceTitle
                     skipMany spaceChar
-                    optional $ newline >> notFollowedBy blankline
+                    optional softBreak
                     skipMany spaceChar
                     notFollowedBy' (() <$ reference)
                     many1 $ escapedChar' <|> satisfy (not . isBlank)
@@ -225,7 +225,7 @@ referenceKey = try $ do
                        manyTill (escapedChar' <|> litChar) (char '>')
   src <- try betweenAngles <|> sourceURL
   tit <- option "" referenceTitle
-  blanklines
+  hardBreaks
   let target = (escapeURI $ removeTrailingSpace src,  tit)
   st <- getState
   let oldkeys = stateKeys' st
@@ -262,12 +262,12 @@ noteBlock = try $ do
   skipNonindentSpaces
   ref <- noteMarker
   char ':'
-  optional blankline
+  optional softBreak
   optional indentSpaces
   raw <- sepBy rawLines
              (try (blankline >> indentSpaces >>
                    notFollowedBy blankline))
-  optional blanklines
+  hardBreaks
   parsed <- parseFromString parseBlocks $ unlines raw ++ "\n"
   let newnote = (ref, parsed)
   updateState $ \s -> s { stateNotes' = newnote : stateNotes' s }
