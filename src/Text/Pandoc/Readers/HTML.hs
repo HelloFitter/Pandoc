@@ -47,6 +47,7 @@ import Data.Maybe ( fromMaybe, isJust )
 import Data.List ( intercalate )
 import Data.Char ( isDigit )
 import Control.Monad ( liftM, guard, when, mzero )
+import Control.Monad.Identity ( Identity )
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -67,7 +68,7 @@ readHtml opts inp = Pandoc meta blocks
                           then parseHeader tags
                           else (Meta [] [] [], tags)
 
-type TagParser = Parser [Tag String] ParserState
+type TagParser = Parser [Tag String] ParserState Identity
 
 -- TODO - fix this - not every header has a title tag
 parseHeader :: [Tag String] -> (Meta, [Tag String])
@@ -424,11 +425,11 @@ pBlank = try $ do
   (TagText str) <- pSatisfy isTagText
   guard $ all isSpace str
 
-pTagContents :: Parser [Char] ParserState Inline
+pTagContents :: Monad m => Parser [Char] ParserState m Inline
 pTagContents =
   pStr <|> pSpace <|> smartPunctuation pTagContents <|> pSymbol <|> pBad
 
-pStr :: Parser [Char] ParserState Inline
+pStr :: Monad m => Parser [Char] ParserState m Inline
 pStr = do
   result <- many1 $ satisfy $ \c ->
                      not (isSpace c) && not (isSpecial c) && not (isBad c)
@@ -447,13 +448,13 @@ isSpecial '\8220' = True
 isSpecial '\8221' = True
 isSpecial _ = False
 
-pSymbol :: Parser [Char] ParserState Inline
+pSymbol :: Monad m => Parser [Char] ParserState m Inline
 pSymbol = satisfy isSpecial >>= return . Str . (:[])
 
 isBad :: Char -> Bool
 isBad c = c >= '\128' && c <= '\159' -- not allowed in HTML
 
-pBad :: Parser [Char] ParserState Inline
+pBad :: Monad m => Parser [Char] ParserState m Inline
 pBad = do
   c <- satisfy isBad
   let c' = case c of
@@ -487,7 +488,7 @@ pBad = do
                 _      -> '?'
   return $ Str [c']
 
-pSpace :: Parser [Char] ParserState Inline
+pSpace :: Monad m => Parser [Char] ParserState m Inline
 pSpace = many1 (satisfy isSpace) >> return Space
 
 --
@@ -585,7 +586,7 @@ _ `closes` _ = False
 --- parsers for use in markdown, textile readers
 
 -- | Matches a stretch of HTML in balanced tags.
-htmlInBalanced :: (Tag String -> Bool) -> Parser [Char] ParserState String
+htmlInBalanced :: Monad m => (Tag String -> Bool) -> Parser [Char] ParserState m String
 htmlInBalanced f = try $ do
   (TagOpen t _, tag) <- htmlTag f
   guard $ '/' `notElem` tag      -- not a self-closing tag
@@ -597,7 +598,7 @@ htmlInBalanced f = try $ do
   return $ tag ++ concat contents ++ endtag
 
 -- | Matches a tag meeting a certain condition.
-htmlTag :: (Tag String -> Bool) -> Parser [Char] st (Tag String, String)
+htmlTag :: Monad m => (Tag String -> Bool) -> Parser [Char] st m (Tag String, String)
 htmlTag f = try $ do
   lookAhead $ char '<' >> (oneOf "/!?" <|> letter)
   (next : _) <- getInput >>= return . canonicalizeTags . parseTags

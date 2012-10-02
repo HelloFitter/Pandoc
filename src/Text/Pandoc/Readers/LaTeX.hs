@@ -48,6 +48,7 @@ import System.FilePath (replaceExtension)
 import Data.List (intercalate)
 import qualified Data.Map as M
 import qualified Control.Exception as E
+import Control.Monad.Identity (Identity)
 
 -- | Parse LaTeX from string and return 'Pandoc' document.
 readLaTeX :: ReaderOptions -- ^ Reader options
@@ -65,7 +66,7 @@ parseLaTeX = do
   let date' = stateDate st
   return $ Pandoc (Meta title' authors' date') $ toList bs
 
-type LP = Parser [Char] ParserState
+type LP = Parser [Char] ParserState Identity
 
 anyControlSeq :: LP String
 anyControlSeq = do
@@ -709,10 +710,10 @@ verbatimEnv = do
   rest <- getInput
   return (r,rest)
 
-rawLaTeXBlock :: Parser [Char] ParserState String
+rawLaTeXBlock :: Parser [Char] ParserState Identity String
 rawLaTeXBlock = snd <$> try (withRaw (environment <|> blockCommand))
 
-rawLaTeXInline :: Parser [Char] ParserState Inline
+rawLaTeXInline :: Parser [Char] ParserState Identity Inline
 rawLaTeXInline = do
   (res, raw) <- withRaw inlineCommand
   if res == mempty

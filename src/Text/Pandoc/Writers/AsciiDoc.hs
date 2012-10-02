@@ -44,6 +44,7 @@ import Text.Pandoc.Options
 import Text.Pandoc.Parsing hiding (blankline, space)
 import Data.List ( isPrefixOf, intersperse, intercalate )
 import Text.Pandoc.Pretty
+import Control.Monad.Identity (Identity)
 import Control.Monad.State
 
 data WriterState = WriterState { defListMarker :: String
@@ -93,7 +94,7 @@ escapeString = escapeStringUsing escs
   where escs = backslashEscapes "{"
 
 -- | Ordered list start parser for use in Para below.
-olMarker :: Parser [Char] ParserState Char
+olMarker :: Parser [Char] ParserState Identity Char
 olMarker = do (start, style', delim) <- anyOrderedListMarker
               if delim == Period &&
                           (style' == UpperAlpha || (style' == UpperRoman &&

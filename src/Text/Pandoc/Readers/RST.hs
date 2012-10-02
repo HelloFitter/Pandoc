@@ -34,7 +34,6 @@ import Text.Pandoc.Definition
 import Text.Pandoc.Shared
 import Text.Pandoc.Parsing
 import Text.Pandoc.Options
-import Control.Monad ( when, liftM, guard, mzero )
 import Data.List ( findIndex, intersperse, intercalate,
                    transpose, sort, deleteFirstsBy, isSuffixOf )
 import qualified Data.Map as M
@@ -46,6 +45,7 @@ import qualified Text.Pandoc.Builder as B
 import Data.Monoid (mconcat, mempty)
 import Data.Sequence (viewr, ViewR(..))
 import Data.Char (toLower)
+import Control.Monad.Identity
 
 -- | Parse reStructuredText string and return Pandoc document.
 readRST :: ReaderOptions -- ^ Reader options
@@ -53,7 +53,7 @@ readRST :: ReaderOptions -- ^ Reader options
         -> Pandoc
 readRST opts s = (readWith parseRST) def{ stateOptions = opts } (s ++ "\n\n")
 
-type RSTParser = Parser [Char] ParserState
+type RSTParser = Parser [Char] ParserState Identity
 
 --
 -- Constants and data structure definitions
@@ -295,7 +295,7 @@ singleHeader = try $ do
 -- hrule block
 --
 
-hrule :: Parser [Char] st Blocks
+hrule :: RSTParser Blocks
 hrule = try $ do
   chr <- oneOf underlineChars
   count 3 (char chr)
@@ -309,14 +309,14 @@ hrule = try $ do
 --
 
 -- read a line indented by a given string
-indentedLine :: String -> Parser [Char] st [Char]
+indentedLine :: String -> RSTParser [Char]
 indentedLine indents = try $ do
   string indents
   manyTill anyChar newline
 
 -- one or more indented lines, possibly separated by blank lines.
 -- any amount of indentation will work.
-indentedBlock :: Parser [Char] st [Char]
+indentedBlock :: RSTParser [Char]
 indentedBlock = try $ do
   indents <- lookAhead $ many1 spaceChar
   lns <- many1 $ try $ do b <- option "" blanklines
@@ -325,13 +325,13 @@ indentedBlock = try $ do
   optional blanklines
   return $ unlines lns
 
-codeBlockStart :: Parser [Char] st Char
+codeBlockStart :: RSTParser Char
 codeBlockStart = string "::" >> blankline >> blankline
 
-codeBlock :: Parser [Char] st Blocks
+codeBlock :: RSTParser Blocks
 codeBlock = try $ codeBlockStart >> codeBlockBody
 
-codeBlockBody :: Parser [Char] st Blocks
+codeBlockBody :: RSTParser Blocks
 codeBlockBody = try $ B.codeBlock . stripTrailingNewlines <$> indentedBlock
 
 lhsCodeBlock :: RSTParser Blocks
@@ -348,7 +348,7 @@ lhsCodeBlock = try $ do
   return $ B.codeBlockWith ("", ["sourceCode", "literate", "haskell"], [])
          $ intercalate "\n" lns'
 
-birdTrackLine :: Parser [Char] st [Char]
+birdTrackLine :: RSTParser [Char]
 birdTrackLine = char '>' >> manyTill anyChar newline
 
 --
@@ -383,7 +383,7 @@ definitionList :: RSTParser Blocks
 definitionList = B.definitionList <$> many1 definitionListItem
 
 -- parses bullet list start and returns its length (inc. following whitespace)
-bulletListStart :: Parser [Char] st Int
+bulletListStart :: RSTParser Int
 bulletListStart = try $ do
   notFollowedBy' hrule  -- because hrules start out just like lists
   marker <- oneOf bulletListMarkers
@@ -673,14 +673,14 @@ unquotedReferenceName = try $ do
 -- plus isolated (no two adjacent) internal hyphens, underscores,
 -- periods, colons and plus signs; no whitespace or other characters
 -- are allowed.
-simpleReferenceName' :: Parser [Char] st String
+simpleReferenceName' :: RSTParser String
 simpleReferenceName' = do
   x <- alphaNum
   xs <- many $  alphaNum
             <|> (try $ oneOf "-_:+." >> lookAhead alphaNum)
   return (x:xs)
 
-simpleReferenceName :: Parser [Char] st Inlines
+simpleReferenceName :: RSTParser Inlines
 simpleReferenceName = do
   raw <- simpleReferenceName'
   return $ B.str raw
@@ -699,7 +699,7 @@ referenceKey = do
   -- return enough blanks to replace key
   return $ replicate (sourceLine endPos - sourceLine startPos) '\n'
 
-targetURI :: Parser [Char] st [Char]
+targetURI :: RSTParser [Char]
 targetURI = do
   skipSpaces
   optional newline
@@ -765,13 +765,13 @@ regularKey = try $ do
 -- Grid tables TODO:
 --  - column spans
 
-dashedLine :: Char -> Parser [Char] st (Int, Int)
+dashedLine :: Char -> RSTParser (Int, Int)
 dashedLine ch = do
   dashes <- many1 (char ch)
   sp     <- many (char ' ')
   return (length dashes, length $ dashes ++ sp)
 
-simpleDashedLines :: Char -> Parser [Char] st [(Int,Int)]
+simpleDashedLines :: Char -> RSTParser [(Int,Int)]
 simpleDashedLines ch = try $ many1 (dashedLine ch)
 
 -- Parse a table row separator
@@ -867,7 +867,7 @@ hyphens = do
   -- don't want to treat endline after hyphen or dash as a space
   return $ B.str result
 
-escapedChar :: Parser [Char] st Inlines
+escapedChar :: RSTParser Inlines
 escapedChar = do c <- escaped anyChar
                  return $ if c == ' '  -- '\ ' is null in RST
                              then mempty

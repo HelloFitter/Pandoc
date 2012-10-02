@@ -51,6 +51,7 @@ import Data.List (intersperse, intercalate, isPrefixOf )
 import Text.HTML.TagSoup
 import Data.Sequence (viewl, ViewL(..), (<|))
 import Data.Char (isDigit)
+import Control.Monad.Identity (Identity)
 
 -- | Read mediawiki from an input string and return a Pandoc document.
 readMediaWiki :: ReaderOptions -- ^ Reader options
@@ -72,7 +73,7 @@ data MWState = MWState { mwOptions         :: ReaderOptions
                        , mwCategoryLinks   :: [Inlines]
                        }
 
-type MWParser = Parser [Char] MWState
+type MWParser = Parser [Char] MWState Identity
 
 --
 -- auxiliary functions
@@ -210,7 +211,7 @@ parseAttrs s = case parse (many parseAttr) "attributes" s of
                     Right r -> r
                     Left _  -> []
 
-parseAttr :: Parser String () (String, String)
+parseAttr :: Parser [Char] () Identity (String, String)
 parseAttr = try $ do
   skipMany spaceChar
   k <- many1 letter

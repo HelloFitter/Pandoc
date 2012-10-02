@@ -40,6 +40,7 @@ import Text.Pandoc.Parsing hiding (blankline, char, space)
 import Data.List ( group, isPrefixOf, find, intersperse, transpose )
 import Text.Pandoc.Pretty
 import Control.Monad.State
+import Control.Monad.Identity (Identity)
 import qualified Data.Set as Set
 import Text.Pandoc.Writers.HTML (writeHtmlString)
 import Text.Pandoc.Readers.TeXMath (readTeXMath)
@@ -225,7 +226,7 @@ attrsToMarkdown attribs = braces $ hsep [attribId, attribClasses, attribKeys]
                                               <> "=\"" <> text v <> "\"") ks
 
 -- | Ordered list start parser for use in Para below.
-olMarker :: Parser [Char] ParserState Char
+olMarker :: Parser [Char] ParserState Identity Char
 olMarker = do (start, style', delim) <- anyOrderedListMarker
               if delim == Period &&
                           (style' == UpperAlpha || (style' == UpperRoman &&
