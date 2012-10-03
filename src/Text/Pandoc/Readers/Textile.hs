@@ -65,7 +65,6 @@ import Data.List ( intercalate )
 import Data.Char ( digitToInt, isUpper )
 import Control.Monad ( guard, liftM )
 import Control.Applicative ((<$>), (*>), (<*))
-import Control.Monad.Identity ( Identity )
 
 -- | Parse a Textile text and return a Pandoc document.
 readTextile :: ReaderOptions -- ^ Reader options
@@ -74,10 +73,10 @@ readTextile :: ReaderOptions -- ^ Reader options
 readTextile opts s =
   (readWith parseTextile) def{ stateOptions = opts } (s ++ "\n\n")
 
-type TextileParser = Parser [Char] ParserState Identity
+type TextileParser m = Parser [Char] ParserState m
 
 -- | Generate a Pandoc ADT from a textile document
-parseTextile :: TextileParser Pandoc
+parseTextile :: Monad m => TextileParser m Pandoc
 parseTextile = do
   -- textile allows raw HTML and does smart punctuation by default
   oldOpts <- stateOptions `fmap` getState
@@ -100,10 +99,10 @@ parseTextile = do
   blocks <- parseBlocks
   return $ Pandoc (Meta [] [] []) blocks -- FIXME
 
-noteMarker :: TextileParser [Char]
+noteMarker :: Monad m => TextileParser m [Char]
 noteMarker = skipMany spaceChar >> string "fn" >> manyTill digit (char '.')
 
-noteBlock :: TextileParser [Char]
+noteBlock :: Monad m => TextileParser m [Char]
 noteBlock = try $ do
   startPos <- getPosition
   ref <- noteMarker
@@ -118,11 +117,11 @@ noteBlock = try $ do
   return $ replicate (sourceLine endPos - sourceLine startPos) '\n'
 
 -- | Parse document blocks
-parseBlocks :: TextileParser [Block]
+parseBlocks :: Monad m => TextileParser m [Block]
 parseBlocks = manyTill block eof
 
 -- | Block parsers list tried in definition order
-blockParsers :: [TextileParser Block]
+blockParsers :: Monad m => [TextileParser m Block]
 blockParsers = [ codeBlock
                , header
                , blockQuote
@@ -135,20 +134,20 @@ blockParsers = [ codeBlock
                ]
 
 -- | Any block in the order of definition of blockParsers
-block :: TextileParser Block
+block :: Monad m => TextileParser m Block
 block = choice blockParsers <?> "block"
 
-codeBlock :: TextileParser Block
+codeBlock :: Monad m => TextileParser m Block
 codeBlock = codeBlockBc <|> codeBlockPre
 
-codeBlockBc :: TextileParser Block
+codeBlockBc :: Monad m => TextileParser m Block
 codeBlockBc = try $ do
   string "bc. "
   contents <- manyTill anyLine blanklines
   return $ CodeBlock ("",[],[]) $ unlines contents
 
 -- | Code Blocks in Textile are between <pre> and </pre>
-codeBlockPre :: TextileParser Block
+codeBlockPre :: Monad m => TextileParser m Block
 codeBlockPre = try $ do
   htmlTag (tagOpen (=="pre") null)
   result' <- manyTill anyChar (try $ htmlTag (tagClose (=="pre")) >> blockBreak)
@@ -163,7 +162,7 @@ codeBlockPre = try $ do
   return $ CodeBlock ("",[],[]) result'''
 
 -- | Header of the form "hN. content" with N in 1..6
-header :: TextileParser Block
+header :: Monad m => TextileParser m Block
 header = try $ do
   char 'h'
   level <- digitToInt <$> oneOf "123456"
@@ -172,14 +171,14 @@ header = try $ do
   return $ Header level name
 
 -- | Blockquote of the form "bq. content"
-blockQuote :: TextileParser Block
+blockQuote :: Monad m => TextileParser m Block
 blockQuote = try $ do
   string "bq" >> optional attributes >> char '.' >> whitespace
   BlockQuote . singleton <$> para
 
 -- Horizontal rule
 
-hrule :: TextileParser Block
+hrule :: Monad m => TextileParser m Block
 hrule = try $ do
   skipSpaces
   start <- oneOf "-*"
@@ -194,39 +193,39 @@ hrule = try $ do
 -- | Can be a bullet list or an ordered list. This implementation is
 -- strict in the nesting, sublist must start at exactly "parent depth
 -- plus one"
-anyList :: TextileParser Block
+anyList :: Monad m => TextileParser m Block
 anyList = try $ ( (anyListAtDepth 1) <* blanklines )
 
 -- | This allow one type of list to be nested into an other type,
 -- provided correct nesting
-anyListAtDepth :: Int -> TextileParser Block
+anyListAtDepth :: Monad m => Int -> TextileParser m Block
 anyListAtDepth depth = choice [ bulletListAtDepth depth,
                                 orderedListAtDepth depth,
                                 definitionList ]
 
 -- | Bullet List of given depth, depth being the number of leading '*'
-bulletListAtDepth :: Int -> TextileParser Block
+bulletListAtDepth :: Monad m => Int -> TextileParser m Block
 bulletListAtDepth depth = try $ BulletList <$> many1 (bulletListItemAtDepth depth)
 
 -- | Bullet List Item of given depth, depth being the number of
 -- leading '*'
-bulletListItemAtDepth :: Int -> TextileParser [Block]
+bulletListItemAtDepth :: Monad m => Int -> TextileParser m [Block]
 bulletListItemAtDepth = genericListItemAtDepth '*'
 
 -- | Ordered List of given depth, depth being the number of
 -- leading '#'
-orderedListAtDepth :: Int -> TextileParser Block
+orderedListAtDepth :: Monad m => Int -> TextileParser m Block
 orderedListAtDepth depth = try $ do
   items <- many1 (orderedListItemAtDepth depth)
   return (OrderedList (1, DefaultStyle, DefaultDelim) items)
 
 -- | Ordered List Item of given depth, depth being the number of
 -- leading '#'
-orderedListItemAtDepth :: Int -> TextileParser [Block]
+orderedListItemAtDepth :: Monad m => Int -> TextileParser m [Block]
 orderedListItemAtDepth = genericListItemAtDepth '#'
 
 -- | Common implementation of list items
-genericListItemAtDepth :: Char -> Int -> TextileParser [Block]
+genericListItemAtDepth :: Monad m => Char -> Int -> TextileParser m [Block]
 genericListItemAtDepth c depth = try $ do
   count depth (char c) >> optional attributes >> whitespace
   p <- inlines
@@ -234,22 +233,22 @@ genericListItemAtDepth c depth = try $ do
   return ((Plain p):sublist)
 
 -- | A definition list is a set of consecutive definition items
-definitionList :: TextileParser Block
+definitionList :: Monad m => TextileParser m Block
 definitionList = try $ DefinitionList <$> many1 definitionListItem
 
 -- | A definition list item in textile begins with '- ', followed by
 -- the term defined, then spaces and ":=". The definition follows, on
 -- the same single line, or spaned on multiple line, after a line
 -- break.
-definitionListItem :: TextileParser ([Inline], [[Block]])
+definitionListItem :: Monad m => TextileParser m ([Inline], [[Block]])
 definitionListItem = try $ do
   string "- "
   term <- many1Till inline (try (whitespace >> string ":="))
   def' <- inlineDef <|> multilineDef
   return (term, def')
-  where inlineDef :: TextileParser [[Block]]
+  where inlineDef :: Monad m => TextileParser m [[Block]]
         inlineDef = liftM (\d -> [[Plain d]]) $ try (whitespace >> inlines)
-        multilineDef :: TextileParser [[Block]]
+        multilineDef :: Monad m => TextileParser m [[Block]]
         multilineDef = try $ do
           optional whitespace >> newline
           s <- many1Till anyChar (try (string "=:" >> newline))
@@ -259,57 +258,57 @@ definitionListItem = try $ do
 
 -- | This terminates a block such as a paragraph. Because of raw html
 -- blocks support, we have to lookAhead for a rawHtmlBlock.
-blockBreak :: TextileParser ()
+blockBreak :: Monad m => TextileParser m ()
 blockBreak = try (newline >> blanklines >> return ()) <|>
               (lookAhead rawHtmlBlock >> return ())
 
 -- raw content
 
 -- | A raw Html Block, optionally followed by blanklines
-rawHtmlBlock :: TextileParser Block
+rawHtmlBlock :: Monad m => TextileParser m Block
 rawHtmlBlock = try $ do
   (_,b) <- htmlTag isBlockTag
   optional blanklines
   return $ RawBlock "html" b
 
 -- | Raw block of LaTeX content
-rawLaTeXBlock' :: TextileParser Block
+rawLaTeXBlock' :: Monad m => TextileParser m Block
 rawLaTeXBlock' = do
   guardEnabled Ext_raw_tex
   RawBlock "latex" <$> (rawLaTeXBlock <* spaces)
 
 
 -- | In textile, paragraphs are separated by blank lines.
-para :: TextileParser Block
+para :: Monad m => TextileParser m Block
 para = try $ Para . normalizeSpaces <$> manyTill inline blockBreak
 
 
 -- Tables
 
 -- | A table cell spans until a pipe |
-tableCell :: TextileParser TableCell
+tableCell :: Monad m => TextileParser m TableCell
 tableCell = do
   c <- many1 (noneOf "|\n")
   content <- parseFromString (many1 inline) c
   return $ [ Plain $ normalizeSpaces content ]
 
 -- | A table row is made of many table cells
-tableRow :: TextileParser [TableCell]
+tableRow :: Monad m => TextileParser m [TableCell]
 tableRow = try $ ( char '|' *> (endBy1 tableCell (char '|')) <* newline)
 
 -- | Many table rows
-tableRows :: TextileParser [[TableCell]]
+tableRows :: Monad m => TextileParser m [[TableCell]]
 tableRows = many1 tableRow
 
 -- | Table headers are made of cells separated by a tag "|_."
-tableHeaders :: TextileParser [TableCell]
+tableHeaders :: Monad m => TextileParser m [TableCell]
 tableHeaders = let separator = (try $ string "|_.") in
   try $ ( separator *> (sepBy1 tableCell separator) <* char '|' <* newline )
 
 -- | A table with an optional header. Current implementation can
 -- handle tables with and without header, but will parse cells
 -- alignment attributes as content.
-table :: TextileParser Block
+table :: Monad m => TextileParser m Block
 table = try $ do
   headers <- option [] tableHeaders
   rows <- tableRows
@@ -324,9 +323,9 @@ table = try $ do
 
 -- | Blocks like 'p' and 'table' do not need explicit block tag.
 -- However, they can be used to set HTML/CSS attributes when needed.
-maybeExplicitBlock :: String  -- ^ block tag name
-                    -> TextileParser Block -- ^ implicit block
-                    -> TextileParser Block
+maybeExplicitBlock :: Monad m => String  -- ^ block tag name
+                    -> TextileParser m Block -- ^ implicit block
+                    -> TextileParser m Block
 maybeExplicitBlock name blk = try $ do
   optional $ try $ string name >> optional attributes >> char '.' >>
     optional whitespace >> optional endline
@@ -340,15 +339,15 @@ maybeExplicitBlock name blk = try $ do
 
 
 -- | Any inline element
-inline :: TextileParser Inline
+inline :: Monad m => TextileParser m Inline
 inline = choice inlineParsers <?> "inline"
 
 -- | List of consecutive inlines before a newline
-inlines :: TextileParser [Inline]
+inlines :: Monad m => TextileParser m [Inline]
 inlines = manyTill inline newline
 
 -- | Inline parsers tried in order
-inlineParsers :: [TextileParser Inline]
+inlineParsers :: Monad m => [TextileParser m Inline]
 inlineParsers = [ autoLink
                 , str
                 , whitespace
@@ -369,7 +368,7 @@ inlineParsers = [ autoLink
                 ]
 
 -- | Inline markups
-inlineMarkup :: TextileParser Inline
+inlineMarkup :: Monad m => TextileParser m Inline
 inlineMarkup = choice [ simpleInline (string "??") (Cite [])
                       , simpleInline (string "**") Strong
                       , simpleInline (string "__") Emph
@@ -382,29 +381,29 @@ inlineMarkup = choice [ simpleInline (string "??") (Cite [])
                       ]
 
 -- | Trademark, registered, copyright
-mark :: TextileParser Inline
+mark :: Monad m => TextileParser m Inline
 mark = try $ char '(' >> (try tm <|> try reg <|> copy)
 
-reg :: TextileParser Inline
+reg :: Monad m => TextileParser m Inline
 reg = do
   oneOf "Rr"
   char ')'
   return $ Str "\174"
 
-tm :: TextileParser Inline
+tm :: Monad m => TextileParser m Inline
 tm = do
   oneOf "Tt"
   oneOf "Mm"
   char ')'
   return $ Str "\8482"
 
-copy :: TextileParser Inline
+copy :: Monad m => TextileParser m Inline
 copy = do
   oneOf "Cc"
   char ')'
   return $ Str "\169"
 
-note :: TextileParser Inline
+note :: Monad m => TextileParser m Inline
 note = try $ do
   ref <- (char '[' *> many1 digit <* char ']')
   notes <- stateNotes <$> getState
@@ -428,13 +427,13 @@ wordBoundaries :: [Char]
 wordBoundaries = markupChars ++ stringBreakers
 
 -- | Parse a hyphened sequence of words
-hyphenedWords :: TextileParser String
+hyphenedWords :: Monad m => TextileParser m String
 hyphenedWords = do
   x <- wordChunk
   xs <- many (try $ char '-' >> wordChunk)
   return $ intercalate "-" (x:xs)
 
-wordChunk :: TextileParser String
+wordChunk :: Monad m => TextileParser m String
 wordChunk = try $ do
   hd <- noneOf wordBoundaries
   tl <- many ( (noneOf wordBoundaries) <|>
@@ -443,7 +442,7 @@ wordChunk = try $ do
   return $ hd:tl
 
 -- | Any string
-str :: TextileParser Inline
+str :: Monad m => TextileParser m Inline
 str = do
   baseStr <- hyphenedWords
   -- RedCloth compliance : if parsed word is uppercase and immediatly
@@ -456,34 +455,34 @@ str = do
   return $ Str fullStr
 
 -- | Textile allows HTML span infos, we discard them
-htmlSpan :: TextileParser Inline
+htmlSpan :: Monad m => TextileParser m Inline
 htmlSpan = try $ Str <$> ( char '%' *> attributes *> manyTill anyChar (char '%') )
 
 -- | Some number of space chars
-whitespace :: TextileParser Inline
+whitespace :: Monad m => TextileParser m Inline
 whitespace = many1 spaceChar >> return Space <?> "whitespace"
 
 -- | In Textile, an isolated endline character is a line break
-endline :: TextileParser Inline
+endline :: Monad m => TextileParser m Inline
 endline = try $ do
   newline >> notFollowedBy blankline
   return LineBreak
 
-rawHtmlInline :: TextileParser Inline
+rawHtmlInline :: Monad m => TextileParser m Inline
 rawHtmlInline = RawInline "html" . snd <$> htmlTag isInlineTag
 
 -- | Raw LaTeX Inline
-rawLaTeXInline' :: TextileParser Inline
+rawLaTeXInline' :: Monad m => TextileParser m Inline
 rawLaTeXInline' = try $ do
   guardEnabled Ext_raw_tex
   rawLaTeXInline
 
 -- | Textile standard link syntax is "label":target. But we
 -- can also have ["label":target].
-link :: TextileParser Inline
+link :: Monad m => TextileParser m Inline
 link = linkB <|> linkNoB
 
-linkNoB :: TextileParser Inline
+linkNoB :: Monad m => TextileParser m Inline
 linkNoB = try $ do
   name <- surrounded (char '"') inline
   char ':'
@@ -491,7 +490,7 @@ linkNoB = try $ do
   url <- manyTill nonspaceChar (lookAhead $ space <|> try (oneOf stopChars >> (space <|> newline)))
   return $ Link name (url, "")
 
-linkB :: TextileParser Inline
+linkB :: Monad m => TextileParser m Inline
 linkB = try $ do
   char '['
   name <- surrounded (char '"') inline
@@ -500,13 +499,13 @@ linkB = try $ do
   return $ Link name (url, "")
 
 -- | Detect plain links to http or email.
-autoLink :: TextileParser Inline
+autoLink :: Monad m => TextileParser m Inline
 autoLink = do
   (orig, src) <- (try uri <|> try emailAddress)
   return $ Link [Str orig] (src, "")
 
 -- | image embedding
-image :: TextileParser Inline
+image :: Monad m => TextileParser m Inline
 image = try $ do
   char '!' >> notFollowedBy space
   src <- manyTill anyChar (lookAhead $ oneOf "!(")
@@ -514,49 +513,49 @@ image = try $ do
   char '!'
   return $ Image [Str alt] (src, alt)
 
-escapedInline :: TextileParser Inline
+escapedInline :: Monad m => TextileParser m Inline
 escapedInline = escapedEqs <|> escapedTag
 
-escapedEqs :: TextileParser Inline
+escapedEqs :: Monad m => TextileParser m Inline
 escapedEqs = Str <$> (try $ string "==" *> manyTill anyChar (try $ string "=="))
 
 -- | literal text escaped btw <notextile> tags
-escapedTag :: TextileParser Inline
+escapedTag :: Monad m => TextileParser m Inline
 escapedTag = Str <$>
   (try $ string "<notextile>" *> manyTill anyChar (try $ string "</notextile>"))
 
 -- | Any special symbol defined in wordBoundaries
-symbol :: TextileParser Inline
+symbol :: Monad m => TextileParser m Inline
 symbol = Str . singleton <$> (oneOf wordBoundaries <|> oneOf markupChars)
 
 -- | Inline code
-code :: TextileParser Inline
+code :: Monad m => TextileParser m Inline
 code = code1 <|> code2
 
-code1 :: TextileParser Inline
+code1 :: Monad m => TextileParser m Inline
 code1 = Code nullAttr <$> surrounded (char '@') anyChar
 
-code2 :: TextileParser Inline
+code2 :: Monad m => TextileParser m Inline
 code2 = do
   htmlTag (tagOpen (=="tt") null)
   Code nullAttr <$> manyTill anyChar (try $ htmlTag $ tagClose (=="tt"))
 
 -- | Html / CSS attributes
-attributes :: TextileParser String
+attributes :: Monad m => TextileParser m String
 attributes = choice [ enclosed (char '(') (char ')') anyChar,
                       enclosed (char '{') (char '}') anyChar,
                       enclosed (char '[') (char ']') anyChar]
 
 -- | Parses material surrounded by a parser.
-surrounded :: TextileParser t   -- ^ surrounding parser
-	   -> TextileParser a    -- ^ content parser (to be used repeatedly)
-	   -> TextileParser [a]
+surrounded :: Monad m => TextileParser m t   -- ^ surrounding parser
+	   -> TextileParser m a    -- ^ content parser (to be used repeatedly)
+	   -> TextileParser m [a]
 surrounded border = enclosed (border *> notFollowedBy (oneOf " \t\n\r")) (try border)
 
 -- | Inlines are most of the time of the same form
-simpleInline :: TextileParser t           -- ^ surrounding parser
+simpleInline :: Monad m => TextileParser m t           -- ^ surrounding parser
              -> ([Inline] -> Inline)       -- ^ Inline constructor
-             -> TextileParser Inline   -- ^ content parser (to be used repeatedly)
+             -> TextileParser m Inline   -- ^ content parser (to be used repeatedly)
 simpleInline border construct = surrounded border (inlineWithAttribute) >>=
                                 return . construct . normalizeSpaces
   where inlineWithAttribute = (try $ optional attributes) >> inline
