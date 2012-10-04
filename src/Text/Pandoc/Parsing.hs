@@ -139,7 +139,8 @@ module Text.Pandoc.Parsing ( (>>~),
                              sourceColumn,
                              sourceLine,
                              newPos,
-                             token
+                             token,
+                             tokenPrim
                              )
 where
 
