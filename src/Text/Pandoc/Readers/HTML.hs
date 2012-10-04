@@ -47,7 +47,6 @@ import Data.Maybe ( fromMaybe, isJust )
 import Data.List ( intercalate )
 import Data.Char ( isDigit )
 import Control.Monad ( liftM, guard, when, mzero )
-import Control.Monad.Identity ( Identity )
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -68,7 +67,7 @@ readHtml opts inp = Pandoc meta blocks
                           then parseHeader tags
                           else (Meta [] [] [], tags)
 
-type TagParser = Parser [Tag String] ParserState Identity
+type TagParser m = Parser [Tag String] ParserState m
 
 -- TODO - fix this - not every header has a title tag
 parseHeader :: [Tag String] -> (Meta, [Tag String])
@@ -80,10 +79,10 @@ parseHeader tags = (Meta{docTitle = tit'', docAuthors = [], docDate = []}, rest)
         rest  = drop 1 $ dropWhile (\t -> not $ t ~== TagClose "head" ||
                                                 t ~== TagOpen "body" []) tags
 
-parseBody :: TagParser [Block]
+parseBody ::  Monad m => TagParser m [Block]
 parseBody = liftM (fixPlains False . concat) $ manyTill block eof
 
-block :: TagParser [Block]
+block :: Monad m => TagParser m [Block]
 block = choice
             [ pPara
             , pHeader
@@ -96,10 +95,10 @@ block = choice
             , pRawHtmlBlock
             ]
 
-pList :: TagParser [Block]
+pList :: Monad m => TagParser m [Block]
 pList = pBulletList <|> pOrderedList <|> pDefinitionList
 
-pBulletList :: TagParser [Block]
+pBulletList :: Monad m => TagParser m [Block]
 pBulletList = try $ do
   pSatisfy (~== TagOpen "ul" [])
   let nonItem = pSatisfy (\t ->
@@ -111,7 +110,7 @@ pBulletList = try $ do
   items <- manyTill (pInTags "li" block >>~ skipMany nonItem) (pCloses "ul")
   return [BulletList $ map (fixPlains True) items]
 
-pOrderedList :: TagParser [Block]
+pOrderedList :: Monad m => TagParser m [Block]
 pOrderedList = try $ do
   TagOpen _ attribs <- pSatisfy (~== TagOpen "ol" [])
   let (start, style) = (sta', sty')
@@ -139,13 +138,13 @@ pOrderedList = try $ do
   items <- manyTill (pInTags "li" block >>~ skipMany nonItem) (pCloses "ol")
   return [OrderedList (start, style, DefaultDelim) $ map (fixPlains True) items]
 
-pDefinitionList :: TagParser [Block]
+pDefinitionList :: Monad m => TagParser m [Block]
 pDefinitionList = try $ do
   pSatisfy (~== TagOpen "dl" [])
   items <- manyTill pDefListItem (pCloses "dl")
   return [DefinitionList items]
 
-pDefListItem :: TagParser ([Inline],[[Block]])
+pDefListItem :: Monad m => TagParser m ([Inline],[[Block]])
 pDefListItem = try $ do
   let nonItem = pSatisfy (\t -> not (t ~== TagOpen "dt" []) &&
                   not (t ~== TagOpen "dd" []) && not (t ~== TagClose "dl"))
@@ -170,7 +169,7 @@ fixPlains inList bs = if any isParaish bs
         plainToPara (Plain xs) = Para xs
         plainToPara x = x
 
-pRawTag :: TagParser String
+pRawTag :: Monad m => TagParser m String
 pRawTag = do
   tag <- pAnyTag
   let ignorable x = x `elem` ["html","head","body"]
@@ -178,7 +177,7 @@ pRawTag = do
      then return []
      else return $ renderTags' [tag]
 
-pRawHtmlBlock :: TagParser [Block]
+pRawHtmlBlock :: Monad m => TagParser m [Block]
 pRawHtmlBlock = do
   raw <- pHtmlBlock "script" <|> pHtmlBlock "style" <|> pRawTag
   parseRaw <- getOption readerParseRaw
@@ -186,13 +185,13 @@ pRawHtmlBlock = do
      then return [RawBlock "html" raw]
      else return []
 
-pHtmlBlock :: String -> TagParser String
+pHtmlBlock :: Monad m => String -> TagParser m String
 pHtmlBlock t = try $ do
   open <- pSatisfy (~== TagOpen t [])
   contents <- manyTill pAnyTag (pSatisfy (~== TagClose t))
   return $ renderTags' $ [open] ++ contents ++ [TagClose t]
 
-pHeader :: TagParser [Block]
+pHeader :: Monad m => TagParser m [Block]
 pHeader = try $ do
   TagOpen tagtype attr <- pSatisfy $
                            tagOpen (`elem` ["h1","h2","h3","h4","h5","h6"])
@@ -204,12 +203,12 @@ pHeader = try $ do
               then []  -- skip a representation of the title in the body
               else [Header level $ normalizeSpaces contents]
 
-pHrule :: TagParser [Block]
+pHrule :: Monad m => TagParser m [Block]
 pHrule = do
   pSelfClosing (=="hr") (const True)
   return [HorizontalRule]
 
-pSimpleTable :: TagParser [Block]
+pSimpleTable :: Monad m => TagParser m [Block]
 pSimpleTable = try $ do
   TagOpen _ _ <- pSatisfy (~== TagOpen "table" [])
   skipMany pBlank
@@ -226,31 +225,31 @@ pSimpleTable = try $ do
   let widths = replicate cols 0
   return [Table caption aligns widths head' rows]
 
-pCell :: String -> TagParser [TableCell]
+pCell :: Monad m => String -> TagParser m [TableCell]
 pCell celltype = try $ do
   skipMany pBlank
   res <- pInTags celltype pPlain
   skipMany pBlank
   return [res]
 
-pBlockQuote :: TagParser [Block]
+pBlockQuote :: Monad m => TagParser m [Block]
 pBlockQuote = do
   contents <- pInTags "blockquote" block
   return [BlockQuote $ fixPlains False contents]
 
-pPlain :: TagParser [Block]
+pPlain :: Monad m => TagParser m [Block]
 pPlain = do
   contents <- liftM (normalizeSpaces . concat) $ many1 inline
   if null contents
      then return []
      else return [Plain contents]
 
-pPara :: TagParser [Block]
+pPara :: Monad m => TagParser m [Block]
 pPara = do
   contents <- pInTags "p" inline
   return [Para $ normalizeSpaces contents]
 
-pCodeBlock :: TagParser [Block]
+pCodeBlock :: Monad m => TagParser m [Block]
 pCodeBlock = try $ do
   TagOpen _ attr <- pSatisfy (~== TagOpen "pre" [])
   contents <- manyTill pAnyTag (pCloses "pre" <|> eof)
@@ -269,7 +268,7 @@ pCodeBlock = try $ do
   let attribs = (attribsId, attribsClasses, attribsKV)
   return [CodeBlock attribs result]
 
-inline :: TagParser [Inline]
+inline :: Monad m => TagParser m [Inline]
 inline = choice
            [ pTagText
            , pQ
@@ -285,30 +284,30 @@ inline = choice
            , pRawHtmlInline
            ]
 
-pLocation :: TagParser ()
+pLocation :: Monad m => TagParser m ()
 pLocation = do
   (TagPosition r c) <- pSat isTagPosition
   setPosition $ newPos "input" r c
 
-pSat :: (Tag String -> Bool) -> TagParser (Tag String)
+pSat :: Monad m => (Tag String -> Bool) -> TagParser m (Tag String)
 pSat f = do
   pos <- getPosition
-  token show (const pos) (\x -> if f x then Just x else Nothing)
+  tokenPrim show (\_ _ _ -> pos) (\x -> if f x then Just x else Nothing)
 
-pSatisfy :: (Tag String -> Bool) -> TagParser (Tag String)
+pSatisfy :: Monad m => (Tag String -> Bool) -> TagParser m (Tag String)
 pSatisfy f = try $ optional pLocation >> pSat f
 
-pAnyTag :: TagParser (Tag String)
+pAnyTag :: Monad m => TagParser m (Tag String)
 pAnyTag = pSatisfy (const True)
 
-pSelfClosing :: (String -> Bool) -> ([Attribute String] -> Bool)
-             -> TagParser (Tag String)
+pSelfClosing :: Monad m => (String -> Bool) -> ([Attribute String] -> Bool)
+             -> TagParser m (Tag String)
 pSelfClosing f g = do
   open <- pSatisfy (tagOpen f g)
   optional $ pSatisfy (tagClose f)
   return open
 
-pQ :: TagParser [Inline]
+pQ :: Monad m => TagParser m [Inline]
 pQ = do
   quoteContext <- stateQuoteContext `fmap` getState
   let quoteType = case quoteContext of
@@ -319,19 +318,19 @@ pQ = do
                              else InDoubleQuote
   withQuoteContext innerQuoteContext $ pInlinesInTags "q" (Quoted quoteType)
 
-pEmph :: TagParser [Inline]
+pEmph :: Monad m => TagParser m [Inline]
 pEmph = pInlinesInTags "em" Emph <|> pInlinesInTags "i" Emph
 
-pStrong :: TagParser [Inline]
+pStrong :: Monad m => TagParser m [Inline]
 pStrong = pInlinesInTags "strong" Strong <|> pInlinesInTags "b" Strong
 
-pSuperscript :: TagParser [Inline]
+pSuperscript :: Monad m => TagParser m [Inline]
 pSuperscript = pInlinesInTags "sup" Superscript
 
-pSubscript :: TagParser [Inline]
+pSubscript :: Monad m => TagParser m [Inline]
 pSubscript = pInlinesInTags "sub" Subscript
 
-pStrikeout :: TagParser [Inline]
+pStrikeout :: Monad m => TagParser m [Inline]
 pStrikeout = do
   pInlinesInTags "s" Strikeout <|>
     pInlinesInTags "strike" Strikeout <|>
@@ -340,12 +339,12 @@ pStrikeout = do
             contents <- liftM concat $ manyTill inline (pCloses "span")
             return [Strikeout contents])
 
-pLineBreak :: TagParser [Inline]
+pLineBreak :: Monad m => TagParser m [Inline]
 pLineBreak = do
   pSelfClosing (=="br") (const True)
   return [LineBreak]
 
-pLink :: TagParser [Inline]
+pLink :: Monad m => TagParser m [Inline]
 pLink = try $ do
   tag <- pSatisfy (tagOpenLit "a" (isJust . lookup "href"))
   let url = fromAttrib "href" tag
@@ -353,7 +352,7 @@ pLink = try $ do
   lab <- liftM concat $ manyTill inline (pCloses "a")
   return [Link (normalizeSpaces lab) (escapeURI url, title)]
 
-pImage :: TagParser [Inline]
+pImage :: Monad m => TagParser m [Inline]
 pImage = do
   tag <- pSelfClosing (=="img") (isJust . lookup "src")
   let url = fromAttrib "src" tag
@@ -361,7 +360,7 @@ pImage = do
   let alt = fromAttrib "alt" tag
   return [Image (toList $ text alt) (escapeURI url, title)]
 
-pCode :: TagParser [Inline]
+pCode :: Monad m => TagParser m [Inline]
 pCode = try $ do
   (TagOpen open attr) <- pSatisfy $ tagOpen (`elem` ["code","tt"]) (const True)
   result <- manyTill pAnyTag (pCloses open)
@@ -371,7 +370,7 @@ pCode = try $ do
   return [Code (ident,classes,rest)
          $ intercalate " " $ lines $ innerText result]
 
-pRawHtmlInline :: TagParser [Inline]
+pRawHtmlInline :: Monad m => TagParser m [Inline]
 pRawHtmlInline = do
   result <- pSatisfy (tagComment (const True)) <|> pSatisfy isInlineTag
   parseRaw <- getOption readerParseRaw
@@ -379,20 +378,20 @@ pRawHtmlInline = do
      then return [RawInline "html" $ renderTags' [result]]
      else return []
 
-pInlinesInTags :: String -> ([Inline] -> Inline)
-               -> TagParser [Inline]
+pInlinesInTags :: Monad m => String -> ([Inline] -> Inline)
+               -> TagParser m [Inline]
 pInlinesInTags tagtype f = do
   contents <- pInTags tagtype inline
   return [f $ normalizeSpaces contents]
 
-pInTags :: String -> TagParser [a]
-        -> TagParser [a]
+pInTags :: Monad m => String -> TagParser m [a]
+        -> TagParser m [a]
 pInTags tagtype parser = try $ do
   pSatisfy (~== TagOpen tagtype [])
   liftM concat $ manyTill parser (pCloses tagtype <|> eof)
 
-pOptInTag :: String -> TagParser a
-          -> TagParser a
+pOptInTag :: Monad m => String -> TagParser m a
+          -> TagParser m a
 pOptInTag tagtype parser = try $ do
   open <- option False (pSatisfy (~== TagOpen tagtype []) >> return True)
   skipMany pBlank
@@ -401,7 +400,7 @@ pOptInTag tagtype parser = try $ do
   when open $ pCloses tagtype
   return x
 
-pCloses :: String -> TagParser ()
+pCloses :: Monad m => String -> TagParser m ()
 pCloses tagtype = try $ do
   t <- lookAhead $ pSatisfy $ \tag -> isTagClose tag || isTagOpen tag
   case t of
@@ -412,7 +411,7 @@ pCloses tagtype = try $ do
        (TagClose "dl") | tagtype == "li" -> return ()
        _ -> mzero
 
-pTagText :: TagParser [Inline]
+pTagText :: Monad m => TagParser m [Inline]
 pTagText = try $ do
   (TagText str) <- pSatisfy isTagText
   st <- getState
@@ -420,7 +419,7 @@ pTagText = try $ do
        Left _        -> fail $ "Could not parse `" ++ str ++ "'"
        Right result  -> return result
 
-pBlank :: TagParser ()
+pBlank :: Monad m => TagParser m ()
 pBlank = try $ do
   (TagText str) <- pSatisfy isTagText
   guard $ all isSpace str
