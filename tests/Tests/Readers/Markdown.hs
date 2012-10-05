@@ -9,12 +9,13 @@ import Text.Pandoc.Builder
 import qualified Data.Set as Set
 -- import Text.Pandoc.Shared ( normalize )
 import Text.Pandoc
+import Control.Monad.Identity (runIdentity)
 
 markdown :: String -> Pandoc
-markdown = readMarkdown def
+markdown = runIdentity . readMarkdown def
 
 markdownSmart :: String -> Pandoc
-markdownSmart = readMarkdown def { readerSmart = True }
+markdownSmart = runIdentity . readMarkdown def { readerSmart = True }
 
 infix 4 =:
 (=:) :: ToString c
@@ -98,7 +99,7 @@ tests = [ testGroup "inline code"
             =?> para (note (para "See [^1]"))
           ]
         , testGroup "lhs"
-          [ test (readMarkdown def{ readerExtensions = Set.insert
+          [ test (runIdentity . readMarkdown def{ readerExtensions = Set.insert
                        Ext_literate_haskell $ readerExtensions def })
               "inverse bird tracks and html" $
               "> a\n\n< b\n\n<div>\n"

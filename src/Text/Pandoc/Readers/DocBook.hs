@@ -503,8 +503,9 @@ data DBState = DBState{ dbSectionLevel :: Int
                       , dbBook         :: Bool
                       } deriving Show
 
-readDocBook :: ReaderOptions -> String -> Pandoc
-readDocBook _ inp  = setTitle (dbDocTitle st')
+readDocBook :: Monad m => ReaderOptions -> String -> m Pandoc
+readDocBook _ inp  = return
+                   $ setTitle (dbDocTitle st')
                    $ setAuthors (dbDocAuthors st')
                    $ setDate (dbDocDate st')
                    $ doc $ mconcat bs

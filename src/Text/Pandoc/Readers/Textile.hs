@@ -67,9 +67,10 @@ import Control.Monad ( guard, liftM )
 import Control.Applicative ((<$>), (*>), (<*))
 
 -- | Parse a Textile text and return a Pandoc document.
-readTextile :: ReaderOptions -- ^ Reader options
+readTextile :: PMonad m
+            => ReaderOptions -- ^ Reader options
             -> String       -- ^ String to parse (assuming @'\n'@ line endings)
-            -> Pandoc
+            -> m Pandoc
 readTextile opts s =
   (readWith parseTextile) def{ stateOptions = opts } (s ++ "\n\n")
 

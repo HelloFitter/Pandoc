@@ -7,7 +7,7 @@ import System.Environment (getArgs)
 import Data.Monoid
 
 readerBench :: Pandoc
-            -> (String, ReaderOptions -> String -> Pandoc)
+            -> (String, ReaderOptions -> String -> IO Pandoc)
             -> Benchmark
 readerBench doc (name, reader) =
   let writer = case lookup name writers of
@@ -15,10 +15,10 @@ readerBench doc (name, reader) =
                      _ -> error $ "Could not find writer for " ++ name
       inp = writer def{ writerWrapText = True } doc
       -- we compute the length to force full evaluation
-      getLength (Pandoc (Meta a b c) d) =
+      getLength (Pandoc (Meta a b c) d) = return $
             length a + length b + length c + length d
-  in  bench (name ++ " reader") $ whnf (getLength .
-         reader def{ readerSmart = True }) inp
+  in  bench (name ++ " reader") $ whnfIO $ getLength =<<
+         reader def{ readerSmart = True } inp
 
 writerBench :: Pandoc
             -> (String, WriterOptions -> Pandoc -> String)
@@ -38,7 +38,7 @@ main = do
   inp <- readDataFile (Just ".") "README"
   inp2 <- readDataFile (Just ".") "tests/testsuite.txt"
   let opts = def{ readerSmart = True }
-  let doc = readMarkdown opts $ inp ++ unlines (drop 3 $ lines inp2)
+  doc <- readMarkdown opts $ inp ++ unlines (drop 3 $ lines inp2)
   let readerBs = map (readerBench doc) readers
   let writers' = [(n,w) | (n, PureStringWriter w) <- writers]
   defaultMainWith conf (return ()) $

@@ -48,9 +48,10 @@ import Data.Char (toLower)
 import Control.Monad
 
 -- | Parse reStructuredText string and return Pandoc document.
-readRST :: ReaderOptions -- ^ Reader options
+readRST :: PMonad m
+        => ReaderOptions -- ^ Reader options
         -> String        -- ^ String to parse (assuming @'\n'@ line endings)
-        -> Pandoc
+        -> m Pandoc
 readRST opts s = (readWith parseRST) def{ stateOptions = opts } (s ++ "\n\n")
 
 type RSTParser m = Parser [Char] ParserState m

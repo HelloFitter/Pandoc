@@ -7,9 +7,10 @@ import Tests.Helpers
 import Tests.Arbitrary()
 import Text.Pandoc.Builder
 import Text.Pandoc
+import Control.Monad.Identity (runIdentity)
 
 rst :: String -> Pandoc
-rst = readRST def
+rst = runIdentity . readRST def
 
 infix 4 =:
 (=:) :: ToString c

@@ -55,9 +55,10 @@ import qualified Data.Set as Set
 type MarkdownParser m = Parser [Char] ParserState m
 
 -- | Read markdown from an input string and return a Pandoc document.
-readMarkdown :: ReaderOptions -- ^ Reader options
+readMarkdown :: PMonad m
+             => ReaderOptions -- ^ Reader options
              -> String        -- ^ String to parse (assuming @'\n'@ line endings)
-             -> Pandoc
+             -> m Pandoc
 readMarkdown opts s =
   (readWith parseMarkdown) def{ stateOptions = opts } (s ++ "\n\n")
 

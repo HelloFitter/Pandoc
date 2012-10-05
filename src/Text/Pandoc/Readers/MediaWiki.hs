@@ -53,9 +53,10 @@ import Data.Sequence (viewl, ViewL(..), (<|))
 import Data.Char (isDigit)
 
 -- | Read mediawiki from an input string and return a Pandoc document.
-readMediaWiki :: ReaderOptions -- ^ Reader options
+readMediaWiki :: PMonad m
+              => ReaderOptions -- ^ Reader options
               -> String        -- ^ String to parse (assuming @'\n'@ line endings)
-              -> Pandoc
+              -> m Pandoc
 readMediaWiki opts s =
   case runParser parseMediaWiki MWState{ mwOptions = opts
                                        , mwMaxNestingLevel = 4
@@ -63,8 +64,8 @@ readMediaWiki opts s =
                                        , mwCategoryLinks = []
                                        }
        "source" (s ++ "\n") of
-          Left err'    -> error $ "\nError:\n" ++ show err'
-          Right result -> result
+          Left err'    -> fail $ show err'
+          Right result -> return result
 
 data MWState = MWState { mwOptions         :: ReaderOptions
                        , mwMaxNestingLevel :: Int

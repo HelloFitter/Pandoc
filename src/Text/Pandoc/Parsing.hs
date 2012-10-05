@@ -161,8 +161,8 @@ import Text.HTML.TagSoup.Entity ( lookupEntity )
 import Data.Default
 import qualified Data.Set as Set
 import Control.Monad.Reader
-import Control.Monad.Identity (Identity, runIdentity)
 import Control.Monad.Writer
+import Control.Monad.Identity
 
 class Monad m => PMonad m where
   addMessage :: String -> m ()
@@ -172,8 +172,16 @@ instance PMonad IO where
   addMessage m = putStrLn m
   getFile    f = readFile f
 
+instance PMonad Identity where
+  addMessage _ = return ()
+  getFile    _ = return ""
+
 instance PMonad (Writer String) where
   addMessage m = tell m
+  getFile _    = return ""
+
+instance PMonad (Either String) where
+  addMessage _ = return ()
   getFile _    = return ""
 
 type Parser s u m = ParsecT s u m
@@ -704,21 +712,22 @@ gridTableFooter = blanklines
 ---
 
 -- | Parse a string with a given parser and state.
-readWith :: Parser [t] ParserState Identity a     -- ^ parser
+readWith :: PMonad m
+         => Parser [t] ParserState m a            -- ^ parser
          -> ParserState                           -- ^ initial state
          -> [t]                                   -- ^ input
-         -> a
+         -> m a
 readWith parser state input = do
-    let res = runIdentity $ runParserT parser state "source" input
+    res <- runParserT parser state "source" input
     case res of
-      Left err'    -> error $ "\nError:\n" ++ show err'
-      Right result -> result
+      Left err'    -> fail $ show err'
+      Right result -> return result
 
 -- | Parse a string with @parser@ (for testing).
-testStringWith :: (Show a) => Parser [Char] ParserState Identity a
+testStringWith :: (Show a) => Parser [Char] ParserState IO a
                -> String
                -> IO ()
-testStringWith parser str = UTF8.putStrLn $ show $ readWith parser def str
+testStringWith parser str = UTF8.putStrLn . show =<< readWith parser def str
 
 -- | Parsing options.
 data ParserState = ParserState

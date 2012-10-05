@@ -146,7 +146,7 @@ import Data.Version (showVersion)
 import Text.JSON.Generic
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Text.Parsec
+import Text.Pandoc.Parsing
 import Text.Parsec.Error
 import Paths_pandoc (version)
 
@@ -175,9 +175,9 @@ parseFormatSpec = parse formatSpec ""
                         _    -> Set.insert ext
 
 -- | Association list of formats and readers.
-readers :: [(String, ReaderOptions -> String -> Pandoc)]
-readers = [("native"       , \_ -> readNative)
-          ,("json"         , \_ -> decodeJSON)
+readers :: PMonad m => [(String, ReaderOptions -> String -> m Pandoc)]
+readers = [("native"       , \_ -> return . readNative)
+          ,("json"         , \_ -> return . decodeJSON)
           ,("markdown_strict" , readMarkdown)
           ,("markdown"     , readMarkdown)
           ,("rst"          , readRST)
@@ -238,7 +238,7 @@ getDefaultExtensions "markdown_strict" = strictExtensions
 getDefaultExtensions _        = pandocExtensions
 
 -- | Retrieve reader based on formatSpec (format+extensions).
-getReader :: String -> Either String (ReaderOptions -> String -> Pandoc)
+getReader :: PMonad m => String -> Either String (ReaderOptions -> String -> m Pandoc)
 getReader s =
   case parseFormatSpec s of
        Left e  -> Left $ intercalate "\n" $ [m | Message m <- errorMessages e]

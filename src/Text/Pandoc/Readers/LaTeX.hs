@@ -51,9 +51,10 @@ import qualified Control.Exception as E
 import Control.Monad.Identity (Identity)
 
 -- | Parse LaTeX from string and return 'Pandoc' document.
-readLaTeX :: ReaderOptions -- ^ Reader options
+readLaTeX :: PMonad m
+          => ReaderOptions -- ^ Reader options
           -> String        -- ^ String to parse (assumes @'\n'@ line endings)
-          -> Pandoc
+          -> m Pandoc
 readLaTeX opts = readWith parseLaTeX def{ stateOptions = opts }
 
 type LP m = Parser [Char] ParserState m

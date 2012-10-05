@@ -690,7 +690,8 @@ usageMessage programName = usageInfo
   (wrapWords 16 78 $ writers'names) ++ "\nOptions:")
   where
     writers'names = map fst writers
-    readers'names = map fst readers
+    readers'names = map fst (readers ::
+                              [(String, ReaderOptions -> String -> IO Pandoc)])
 
 -- Determine default reader based on source file extensions
 defaultReaderName :: String -> [FilePath] -> String
@@ -995,7 +996,7 @@ main = do
                            then handleIncludes
                            else return
 
-  doc <- (reader readerOpts) `fmap` (readSources sources >>=
+  doc <- reader readerOpts =<< (readSources sources >>=
              handleIncludes' . convertTabs . intercalate "\n")
 
   let doc0 = foldr ($) doc transforms
