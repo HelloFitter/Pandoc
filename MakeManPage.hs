@@ -10,7 +10,7 @@ import Text.Pandoc.Shared (normalize)
 
 main = do
   rmContents <- liftM toString $ B.readFile "README"
-  let (Pandoc meta blocks) = readMarkdown def rmContents
+  Pandoc meta blocks <- readMarkdown def rmContents
   let manBlocks = removeSect [Str "Wrappers"]
                 $ removeSect [Str "Pandoc's",Space,Str "markdown"] blocks
   let syntaxBlocks = extractSect [Str "Pandoc's",Space,Str "markdown"] blocks
