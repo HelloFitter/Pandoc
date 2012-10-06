@@ -149,7 +149,6 @@ where
 import Text.Pandoc.Definition
 import Text.Pandoc.Options
 import Text.Pandoc.Builder (Blocks, Inlines)
-import qualified Text.Pandoc.UTF8 as UTF8 (putStrLn)
 import Text.Parsec
 import Text.Parsec.Pos (newPos)
 import Data.Char ( toLower, toUpper, ord, isAscii, isAlphaNum, isDigit, isPunctuation )
@@ -169,25 +168,22 @@ import qualified Text.Pandoc.UTF8 as UTF8
 
 class Monad m => PMonad m where
   addMessage :: String -> m ()
+  addMessage _ = return ()
   getFile    :: FilePath -> m String
+  getFile    _ = return ""
 
 instance PMonad IO where
   addMessage m = warn m
-  getFile    f = E.catch (UTF8.readFile f) $ \(e :: E.SomeException) ->
+  getFile    f = E.catch (UTF8.readFile f) $ \(_ :: E.SomeException) ->
                    do addMessage $ "Could not read `" ++ f ++ "'; skipping."
                       return ""
-
-instance PMonad Identity where
-  addMessage _ = return ()
-  getFile    _ = return ""
 
 instance PMonad (Writer String) where
   addMessage m = tell m
   getFile _    = return ""
 
-instance PMonad (Either String) where
-  addMessage _ = return ()
-  getFile _    = return ""
+instance PMonad Identity
+instance PMonad Maybe
 
 type Parser s u m = ParsecT s u m
 

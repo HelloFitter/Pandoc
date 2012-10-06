@@ -32,7 +32,6 @@ writers.
 module Main where
 import Text.Pandoc
 import Text.Pandoc.PDF (tex2pdf)
-import Text.Pandoc.Readers.LaTeX (handleIncludes)
 import Text.Pandoc.Shared ( tabFilter, readDataFile, safeRead,
                             headerShift, normalize, err, warn )
 import Text.Pandoc.XML ( toEntities, fromEntities )
@@ -53,6 +52,7 @@ import Control.Exception.Extensible ( throwIO )
 import qualified Text.Pandoc.UTF8 as UTF8
 import qualified Text.CSL as CSL
 import Text.Pandoc.Biblio
+import Control.Applicative ((<$>))
 import Control.Monad (when, unless, liftM)
 import Network.HTTP (simpleHTTP, mkRequest, getResponseBody, RequestMethod(..))
 import Network.URI (parseURI, isURI, URI(..))
@@ -992,12 +992,7 @@ main = do
 
   let convertTabs = tabFilter (if preserveTabs then 0 else tabStop)
 
-  let handleIncludes' = if readerName' == "latex" || readerName' == "latex+lhs"
-                           then handleIncludes
-                           else return
-
-  doc <- reader readerOpts =<< (readSources sources >>=
-             handleIncludes' . convertTabs . intercalate "\n")
+  doc <- reader readerOpts =<< (convertTabs . intercalate "\n" <$> readSources sources)
 
   let doc0 = foldr ($) doc transforms
 

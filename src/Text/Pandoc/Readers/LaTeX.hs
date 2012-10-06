@@ -30,14 +30,12 @@ Conversion of LaTeX to 'Pandoc' document.
 module Text.Pandoc.Readers.LaTeX ( readLaTeX,
                                    rawLaTeXInline,
                                    rawLaTeXBlock,
-                                   handleIncludes
                                  ) where
 
 import Text.Pandoc.Definition
 import Text.Pandoc.Shared
 import Text.Pandoc.Options
 import Text.Pandoc.Parsing hiding ((<|>), many, optional, space)
-import qualified Text.Pandoc.UTF8 as UTF8
 import Data.Char ( chr, ord )
 import Control.Monad
 import Text.Pandoc.Builder
@@ -47,8 +45,8 @@ import Data.Monoid
 import System.FilePath (replaceExtension)
 import Data.List (intercalate)
 import qualified Data.Map as M
-import qualified Control.Exception as E
 import Control.Monad.Identity (Identity)
+import Control.Monad.Trans ( lift )
 
 -- | Parse LaTeX from string and return 'Pandoc' document.
 readLaTeX :: PMonad m
@@ -59,7 +57,7 @@ readLaTeX opts = readWith parseLaTeX def{ stateOptions = opts }
 
 type LP m = Parser [Char] ParserState m
 
-parseLaTeX :: Monad m => LP m Pandoc
+parseLaTeX :: PMonad m => LP m Pandoc
 parseLaTeX = do
   bs <- blocks
   eof
@@ -69,7 +67,7 @@ parseLaTeX = do
   let date' = stateDate st
   return $ Pandoc (Meta title' authors' date') $ toList bs
 
-anyControlSeq :: Monad m => LP m String
+anyControlSeq :: PMonad m => LP m String
 anyControlSeq = do
   char '\\'
   next <- option '\n' anyChar
@@ -79,7 +77,7 @@ anyControlSeq = do
                  | otherwise  -> return [c]
   return name
 
-controlSeq :: Monad m => String -> LP m String
+controlSeq :: PMonad m => String -> LP m String
 controlSeq name = try $ do
   char '\\'
   case name of
@@ -88,21 +86,21 @@ controlSeq name = try $ do
         cs   -> string cs <* notFollowedBy letter <* optional sp
   return name
 
-dimenarg :: Monad m => LP m String
+dimenarg :: PMonad m => LP m String
 dimenarg = try $ do
   ch  <- option "" $ string "="
   num <- many1 digit
   dim <- oneOfStrings ["pt","pc","in","bp","cm","mm","dd","cc","sp"]
   return $ ch ++ num ++ dim
 
-sp :: Monad m => LP m ()
+sp :: PMonad m => LP m ()
 sp = skipMany1 $ satisfy (\c -> c == ' ' || c == '\t')
         <|> (try $ newline >>~ lookAhead anyChar >>~ notFollowedBy blankline)
 
 isLowerHex :: Char -> Bool
 isLowerHex x = x >= '0' && x <= '9' || x >= 'a' && x <= 'f'
 
-tildeEscape :: Monad m => LP m Char
+tildeEscape :: PMonad m => LP m Char
 tildeEscape = try $ do
   string "^^"
   c <- satisfy (\x -> x >= '\0' && x <= '\128')
@@ -115,27 +113,27 @@ tildeEscape = try $ do
              | otherwise           -> return $ chr (x + 64)
      else return $ chr $ read ('0':'x':c:d)
 
-comment :: Monad m => LP m ()
+comment :: PMonad m => LP m ()
 comment = do
   char '%'
   skipMany (satisfy (/='\n'))
   newline
   return ()
 
-bgroup :: Monad m => LP m ()
+bgroup :: PMonad m => LP m ()
 bgroup = () <$ char '{'
      <|> () <$ controlSeq "bgroup"
      <|> () <$ controlSeq "begingroup"
 
-egroup :: Monad m => LP m ()
+egroup :: PMonad m => LP m ()
 egroup = () <$ char '}'
      <|> () <$ controlSeq "egroup"
      <|> () <$ controlSeq "endgroup"
 
-grouped :: (Monad m, Monoid a) => LP m a -> LP m a
+grouped :: (PMonad m, Monoid a) => LP m a -> LP m a
 grouped parser = try $ bgroup *> (mconcat <$> manyTill parser egroup)
 
-braced :: Monad m => LP m String
+braced :: PMonad m => LP m String
 braced = bgroup *> (concat <$> manyTill
          (  many1 (satisfy (\c -> c /= '\\' && c /= '}' && c /= '{'))
         <|> try (string "\\}")
@@ -145,30 +143,30 @@ braced = bgroup *> (concat <$> manyTill
         <|> count 1 anyChar
          ) egroup)
 
-bracketed :: Monad m => Monoid a => LP m a -> LP m a
+bracketed :: PMonad m => Monoid a => LP m a -> LP m a
 bracketed parser = try $ char '[' *> (mconcat <$> manyTill parser (char ']'))
 
-mathDisplay :: Monad m => LP m String -> LP m Inlines
+mathDisplay :: PMonad m => LP m String -> LP m Inlines
 mathDisplay p = displayMath <$> (try p >>= applyMacros' . trim)
 
-mathInline :: Monad m => LP m String -> LP m Inlines
+mathInline :: PMonad m => LP m String -> LP m Inlines
 mathInline p = math <$> (try p >>= applyMacros')
 
-mathChars :: Monad m => LP m String
+mathChars :: PMonad m => LP m String
 mathChars = concat <$>
   many (   many1 (satisfy (\c -> c /= '$' && c /='\\'))
       <|> (\c -> ['\\',c]) <$> (try $ char '\\' *> anyChar)
        )
 
-double_quote :: Monad m => LP m Inlines
+double_quote :: PMonad m => LP m Inlines
 double_quote = (doubleQuoted . mconcat) <$>
   (try $ string "``" *> manyTill inline (try $ string "''"))
 
-single_quote :: Monad m => LP m Inlines
+single_quote :: PMonad m => LP m Inlines
 single_quote = (singleQuoted . mconcat) <$>
   (try $ char '`' *> manyTill inline (try $ char '\'' >> notFollowedBy letter))
 
-inline :: Monad m => LP m Inlines
+inline :: PMonad m => LP m Inlines
 inline = (mempty <$ comment)
      <|> (space  <$ sp)
      <|> inlineText
@@ -193,10 +191,10 @@ inline = (mempty <$ comment)
      <|> (str . (:[]) <$> oneOf "#&") -- TODO print warning?
      -- <|> (str <$> count 1 (satisfy (\c -> c /= '\\' && c /='\n' && c /='}' && c /='{'))) -- eat random leftover characters
 
-inlines :: Monad m => LP m Inlines
+inlines :: PMonad m => LP m Inlines
 inlines = mconcat <$> many (notFollowedBy (char '}') *> inline)
 
-block :: Monad m => LP m Blocks
+block :: PMonad m => LP m Blocks
 block = (mempty <$ comment)
     <|> (mempty <$ ((spaceChar <|> newline) *> spaces))
     <|> environment
@@ -207,10 +205,10 @@ block = (mempty <$ comment)
     <|> (mempty <$ char '&')  -- loose & in table environment
 
 
-blocks :: Monad m => LP m Blocks
+blocks :: PMonad m => LP m Blocks
 blocks = mconcat <$> many block
 
-blockCommand :: Monad m => LP m Blocks
+blockCommand :: PMonad m => LP m Blocks
 blockCommand = try $ do
   name <- anyControlSeq
   guard $ name /= "begin" && name /= "end"
@@ -226,26 +224,28 @@ inBrackets :: Inlines -> Inlines
 inBrackets x = (str "[") <> x <> (str "]")
 
 -- eat an optional argument and one or more arguments in braces
-ignoreInlines :: Monad m => String -> (String, LP m Inlines)
+ignoreInlines :: PMonad m => String -> (String, LP m Inlines)
 ignoreInlines name = (name, doraw <|> (mempty <$ optargs))
   where optargs = skipopts *> skipMany (try $ optional sp *> braced)
         contseq = '\\':name
         doraw = (rawInline "latex" . (contseq ++) . snd) <$>
                  (getOption readerParseRaw >>= guard >> (withRaw optargs))
 
-ignoreBlocks :: Monad m => String -> (String, LP m Blocks)
+ignoreBlocks :: PMonad m => String -> (String, LP m Blocks)
 ignoreBlocks name = (name, doraw <|> (mempty <$ optargs))
   where optargs = skipopts *> skipMany (try $ optional sp *> braced)
         contseq = '\\':name
         doraw = (rawBlock "latex" . (contseq ++) . snd) <$>
                  (getOption readerParseRaw >>= guard >> (withRaw optargs))
 
-blockCommands :: Monad m => M.Map String (LP m Blocks)
+blockCommands :: PMonad m => M.Map String (LP m Blocks)
 blockCommands = M.fromList $
   [ ("par", mempty <$ skipopts)
   , ("title", mempty <$ (skipopts *> tok >>= addTitle))
   , ("subtitle", mempty <$ (skipopts *> tok >>= addSubtitle))
   , ("author", mempty <$ (skipopts *> authors))
+  , ("usepackage", skipopts *> braced >>= include "usepackage")
+  , ("include", skipopts *> braced >>= include "include")
   -- -- in letter class, temp. store address & sig as title, author
   , ("address", mempty <$ (skipopts *> tok >>= addTitle))
   , ("signature", mempty <$ (skipopts *> authors))
@@ -287,14 +287,14 @@ blockCommands = M.fromList $
   , "hspace", "vspace"
   ]
 
-addTitle :: Monad m => Inlines -> LP m ()
+addTitle :: PMonad m => Inlines -> LP m ()
 addTitle tit = updateState (\s -> s{ stateTitle = toList tit })
 
-addSubtitle :: Monad m => Inlines -> LP m ()
+addSubtitle :: PMonad m => Inlines -> LP m ()
 addSubtitle tit = updateState (\s -> s{ stateTitle = stateTitle s ++
                         toList (str ":" <> linebreak <> tit) })
 
-authors :: Monad m => LP m ()
+authors :: PMonad m => LP m ()
 authors = try $ do
   char '{'
   let oneAuthor = mconcat <$>
@@ -305,10 +305,10 @@ authors = try $ do
   char '}'
   updateState (\s -> s { stateAuthors = map (normalizeSpaces . toList) auths })
 
-addDate :: Monad m => Inlines -> LP m ()
+addDate :: PMonad m => Inlines -> LP m ()
 addDate dat = updateState (\s -> s{ stateDate = toList dat })
 
-section :: Monad m => Int -> LP m Blocks
+section :: PMonad m => Int -> LP m Blocks
 section lvl = do
   hasChapters <- stateHasChapters `fmap` getState
   let lvl' = if hasChapters then lvl + 1 else lvl
@@ -316,7 +316,7 @@ section lvl = do
   contents <- grouped inline
   return $ header lvl' contents
 
-inlineCommand :: Monad m => LP m Inlines
+inlineCommand :: PMonad m => LP m Inlines
 inlineCommand = try $ do
   name <- anyControlSeq
   guard $ name /= "begin" && name /= "end"
@@ -335,13 +335,13 @@ inlineCommand = try $ do
                            Just p    -> p <|> raw
                            Nothing   -> raw
 
-unlessParseRaw :: Monad m => LP m ()
+unlessParseRaw :: PMonad m => LP m ()
 unlessParseRaw = getOption readerParseRaw >>= guard . not
 
 isBlockCommand :: String -> Bool
 isBlockCommand s = maybe False (const True) $ M.lookup s (blockCommands :: M.Map String (LP Identity Blocks))
 
-inlineCommands :: Monad m => M.Map String (LP m Inlines)
+inlineCommands :: PMonad m => M.Map String (LP m Inlines)
 inlineCommands = M.fromList $
   [ ("emph", emph <$> tok)
   , ("textit", emph <$> tok)
@@ -488,18 +488,18 @@ unescapeURL ('\\':x:xs) | isEscapable x = x:unescapeURL xs
 unescapeURL (x:xs) = x:unescapeURL xs
 unescapeURL [] = ""
 
-doverb :: Monad m => LP m Inlines
+doverb :: PMonad m => LP m Inlines
 doverb = do
   marker <- anyChar
   code <$> manyTill (satisfy (/='\n')) (char marker)
 
-doLHSverb :: Monad m => LP m Inlines
+doLHSverb :: PMonad m => LP m Inlines
 doLHSverb = codeWith ("",["haskell"],[]) <$> manyTill (satisfy (/='\n')) (char '|')
 
-lit :: Monad m => String -> LP m Inlines
+lit :: PMonad m => String -> LP m Inlines
 lit = pure . str
 
-accent :: Monad m => (Char -> Char) -> Inlines -> LP m Inlines
+accent :: PMonad m => (Char -> Char) -> Inlines -> LP m Inlines
 accent f ils =
   case toList ils of
        (Str (x:xs) : ys) -> return $ fromList $ (Str (f x : xs) : ys)
@@ -631,22 +631,22 @@ cedilla 's' = 'ş'
 cedilla 'S' = 'Ş'
 cedilla c = c
 
-tok :: Monad m => LP m Inlines
+tok :: PMonad m => LP m Inlines
 tok = try $ grouped inline <|> inlineCommand <|> str <$> (count 1 $ inlineChar)
 
-opt :: Monad m => LP m Inlines
+opt :: PMonad m => LP m Inlines
 opt = bracketed inline <* optional sp
 
-skipopts :: Monad m => LP m ()
+skipopts :: PMonad m => LP m ()
 skipopts = skipMany opt
 
-inlineText :: Monad m => LP m Inlines
+inlineText :: PMonad m => LP m Inlines
 inlineText = str <$> many1 inlineChar
 
-inlineChar :: Monad m => LP m Char
+inlineChar :: PMonad m => LP m Char
 inlineChar = noneOf "\\$%^_&~#{}^'`-[] \t\n"
 
-environment :: Monad m => LP m Blocks
+environment :: PMonad m => LP m Blocks
 environment = do
   controlSeq "begin"
   name <- braced
@@ -654,7 +654,7 @@ environment = do
        Just p      -> p <|> rawEnv name
        Nothing     -> rawEnv name
 
-rawEnv :: Monad m => String -> LP m Blocks
+rawEnv :: PMonad m => String -> LP m Blocks
 rawEnv name = do
   let addBegin x = "\\begin{" ++ name ++ "}" ++ x
   parseRaw <- getOption readerParseRaw
@@ -663,65 +663,28 @@ rawEnv name = do
             (withRaw (env name blocks) >>= applyMacros' . snd)
      else env name blocks
 
--- | Replace "include" commands with file contents.
-handleIncludes :: String -> IO String
-handleIncludes [] = return []
-handleIncludes ('\\':xs) =
-  case runParser include defaultParserState "input" ('\\':xs) of
-       Right (fs, rest) -> do let getfile f = E.catch (UTF8.readFile f)
-                                               (\e -> let _ = (e :: E.SomeException)
-                                                      in  return "")
-                              yss <- mapM getfile fs
-                              (intercalate "\n" yss ++) `fmap`
-                                handleIncludes rest
-       _  -> case runParser (verbCmd <|> verbatimEnv) defaultParserState
-                   "input" ('\\':xs) of
-                    Right (r, rest) -> (r ++) `fmap` handleIncludes rest
-                    _               -> ('\\':) `fmap` handleIncludes xs
-handleIncludes (x:xs) = (x:) `fmap` handleIncludes xs
-
-include :: Monad m => LP m ([FilePath], String)
-include = do
-  name <- controlSeq "include" <|> controlSeq "usepackage"
-  skipopts
-  fs <- (splitBy (==',')) <$> braced
+include :: PMonad m => String -> String -> LP m Blocks
+include name arg = do
+  let fs = splitBy (==',') arg
   rest <- getInput
   let fs' = if name == "include"
                then map (flip replaceExtension ".tex") fs
                else map (flip replaceExtension ".sty") fs
-  return (fs', rest)
+  contents <- concat <$> mapM (lift . getFile) fs'
+  setInput (contents ++ rest)
+  return mempty
 
-verbCmd :: Monad m => LP m (String, String)
-verbCmd = do
-  (_,r) <- withRaw $ do
-             controlSeq "verb"
-             c <- anyChar
-             manyTill anyChar (char c)
-  rest <- getInput
-  return (r, rest)
-
-verbatimEnv :: Monad m => LP m (String, String)
-verbatimEnv = do
-  (_,r) <- withRaw $ do
-             controlSeq "begin"
-             name <- braced
-             guard $ name == "verbatim" || name == "Verbatim" ||
-                     name == "lstlisting" || name == "minted"
-             verbEnv name
-  rest <- getInput
-  return (r,rest)
-
-rawLaTeXBlock :: Monad m => Parser [Char] ParserState m String
+rawLaTeXBlock :: PMonad m => Parser [Char] ParserState m String
 rawLaTeXBlock = snd <$> try (withRaw (environment <|> blockCommand))
 
-rawLaTeXInline :: Monad m => Parser [Char] ParserState m Inline
+rawLaTeXInline :: PMonad m => Parser [Char] ParserState m Inline
 rawLaTeXInline = do
   (res, raw) <- withRaw inlineCommand
   if res == mempty
      then return (Str "")
      else RawInline "latex" <$> (applyMacros' raw)
 
-environments :: Monad m => M.Map String (LP m Blocks)
+environments :: PMonad m => M.Map String (LP m Blocks)
 environments = M.fromList
   [ ("document", env "document" blocks <* skipMany anyChar)
   , ("letter", env "letter" letter_contents)
@@ -759,7 +722,7 @@ environments = M.fromList
   , ("alignat*", mathEnv (Just "aligned") "alignat*")
   ]
 
-letter_contents :: Monad m => LP m Blocks
+letter_contents :: PMonad m => LP m Blocks
 letter_contents = do
   bs <- blocks
   st <- getState
@@ -770,7 +733,7 @@ letter_contents = do
   updateState $ \s -> s{ stateAuthors = [], stateTitle = [] }
   return $ addr <> bs -- sig added by \closing
 
-closing :: Monad m => LP m Blocks
+closing :: PMonad m => LP m Blocks
 closing = do
   contents <- tok
   st <- getState
@@ -780,17 +743,17 @@ closing = do
                                $ intercalate [LineBreak] xs
   return $ para (trimInlines contents) <> sigs
 
-item :: Monad m => LP m Blocks
+item :: PMonad m => LP m Blocks
 item = blocks *> controlSeq "item" *> skipopts *> blocks
 
-loose_item :: Monad m => LP m Blocks
+loose_item :: PMonad m => LP m Blocks
 loose_item = do
   ctx <- stateParserContext `fmap` getState
   if ctx == ListItemState
      then mzero
      else return mempty
 
-descItem :: Monad m => LP m (Inlines, [Blocks])
+descItem :: PMonad m => LP m (Inlines, [Blocks])
 descItem = do
   blocks -- skip blocks before item
   controlSeq "item"
@@ -799,12 +762,12 @@ descItem = do
   bs <- blocks
   return (ils, [bs])
 
-env :: Monad m => String -> LP m a -> LP m a
+env :: PMonad m => String -> LP m a -> LP m a
 env name p = p <*
   (try (controlSeq "end" *> braced >>= guard . (== name))
     <?> ("\\end{" ++ name ++ "}"))
 
-listenv :: Monad m => String -> LP m a -> LP m a
+listenv :: PMonad m => String -> LP m a -> LP m a
 listenv name p = try $ do
   oldCtx <- stateParserContext `fmap` getState
   updateState $ \st -> st{ stateParserContext = ListItemState }
@@ -812,14 +775,14 @@ listenv name p = try $ do
   updateState $ \st -> st{ stateParserContext = oldCtx }
   return res
 
-mathEnv :: Monad m => Maybe String -> String -> LP m Blocks
+mathEnv :: PMonad m => Maybe String -> String -> LP m Blocks
 mathEnv innerEnv name = para <$> mathDisplay (inner <$> verbEnv name)
    where inner x = case innerEnv of
                       Nothing -> x
                       Just y  -> "\\begin{" ++ y ++ "}\n" ++ x ++
                                     "\\end{" ++ y ++ "}"
 
-verbEnv :: Monad m => String -> LP m String
+verbEnv :: PMonad m => String -> LP m String
 verbEnv name = do
   skipopts
   optional blankline
@@ -827,7 +790,7 @@ verbEnv name = do
   res <- manyTill anyChar endEnv
   return $ stripTrailingNewlines res
 
-ordered_list :: Monad m => LP m Blocks
+ordered_list :: PMonad m => LP m Blocks
 ordered_list = do
   optional sp
   (_, style, delim) <- option (1, DefaultStyle, DefaultDelim) $
@@ -844,14 +807,14 @@ ordered_list = do
   bs <- listenv "enumerate" (many item)
   return $ orderedListWith (start, style, delim) bs
 
-paragraph :: Monad m => LP m Blocks
+paragraph :: PMonad m => LP m Blocks
 paragraph = do
   x <- mconcat <$> many1 inline
   if x == mempty
      then return mempty
      else return $ para $ trimInlines x
 
-preamble :: Monad m => LP m Blocks
+preamble :: PMonad m => LP m Blocks
 preamble = mempty <$> manyTill preambleBlock beginDoc
   where beginDoc = lookAhead $ controlSeq "begin" *> string "{document}"
         preambleBlock =  (mempty <$ comment)
@@ -881,7 +844,7 @@ addSuffix s ks@(_:_) =
   in  init ks ++ [k {citationSuffix = citationSuffix k ++ s'}]
 addSuffix _ _ = []
 
-simpleCiteArgs :: Monad m => LP m [Citation]
+simpleCiteArgs :: PMonad m => LP m [Citation]
 simpleCiteArgs = try $ do
   first  <- optionMaybe $ toList <$> opt
   second <- optionMaybe $ toList <$> opt
@@ -900,11 +863,11 @@ simpleCiteArgs = try $ do
                         }
   return $ addPrefix pre $ addSuffix suf $ map conv keys
 
-citationLabel :: Monad m => LP m String
+citationLabel :: PMonad m => LP m String
 citationLabel  = trim <$>
   (many1 (satisfy $ \c -> c /=',' && c /='}') <* optional (char ',') <* optional sp)
 
-cites :: Monad m => CitationMode -> Bool -> LP m [Citation]
+cites :: PMonad m => CitationMode -> Bool -> LP m [Citation]
 cites mode multi = try $ do
   cits <- if multi
              then many1 simpleCiteArgs
@@ -914,12 +877,12 @@ cites mode multi = try $ do
         AuthorInText   -> c {citationMode = mode} : cs
         _              -> map (\a -> a {citationMode = mode}) (c:cs)
 
-citation :: Monad m => String -> CitationMode -> Bool -> LP m Inlines
+citation :: PMonad m => String -> CitationMode -> Bool -> LP m Inlines
 citation name mode multi = do
   (c,raw) <- withRaw $ cites mode multi
   return $ cite c (rawInline "latex" $ "\\" ++ name ++ raw)
 
-complexNatbibCitation :: Monad m => CitationMode -> LP m Inlines
+complexNatbibCitation :: PMonad m => CitationMode -> LP m Inlines
 complexNatbibCitation mode = try $ do
   let ils = (toList . trimInlines . mconcat) <$>
               many (notFollowedBy (oneOf "\\};") >> inline)
@@ -941,7 +904,7 @@ complexNatbibCitation mode = try $ do
 
 -- tables
 
-parseAligns :: Monad m => LP m [Alignment]
+parseAligns :: PMonad m => LP m [Alignment]
 parseAligns = try $ do
   char '{'
   optional $ char '|'
@@ -955,16 +918,16 @@ parseAligns = try $ do
   spaces
   return aligns'
 
-hline :: Monad m => LP m ()
+hline :: PMonad m => LP m ()
 hline = () <$ (try $ spaces >> controlSeq "hline")
 
-lbreak :: Monad m => LP m ()
+lbreak :: PMonad m => LP m ()
 lbreak = () <$ (try $ spaces *> controlSeq "\\")
 
-amp :: Monad m => LP m ()
+amp :: PMonad m => LP m ()
 amp = () <$ (try $ spaces *> char '&')
 
-parseTableRow :: Monad m => Int  -- ^ number of columns
+parseTableRow :: PMonad m => Int  -- ^ number of columns
               -> LP m [Blocks]
 parseTableRow cols = try $ do
   let tableCellInline = notFollowedBy (amp <|> lbreak) >> inline
@@ -974,7 +937,7 @@ parseTableRow cols = try $ do
   spaces
   return cells'
 
-simpTable :: Monad m => LP m Blocks
+simpTable :: PMonad m => LP m Blocks
 simpTable = try $ do
   spaces
   aligns <- parseAligns
