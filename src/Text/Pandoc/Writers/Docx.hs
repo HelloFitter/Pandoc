@@ -50,6 +50,9 @@ import Text.XML.Light
 import Text.TeXMath
 import Control.Monad.State
 import Text.Highlighting.Kate
+import Data.Unique (hashUnique, newUnique)
+import System.Random (randomRIO)
+import Text.Printf (printf)
 
 data WriterState = WriterState{
          stTextProperties :: [Element]
@@ -151,8 +154,8 @@ writeDocx opts doc@(Pandoc (Meta tit auths date) _) = do
   let styleEntry = toEntry stylepath epochtime $ UTF8.fromStringLazy $ showTopElement' styledoc'
   -- construct word/numbering.xml
   let numpath = "word/numbering.xml"
-  let numEntry = toEntry numpath epochtime $ UTF8.fromStringLazy $ showTopElement'
-                 $ mkNumbering (stNumStyles st) (stLists st)
+  numEntry <- (toEntry numpath epochtime . UTF8.fromStringLazy . showTopElement')
+                 `fmap` mkNumbering (stNumStyles st) (stLists st)
   let docPropsPath = "docProps/core.xml"
   let docProps = mknode "cp:coreProperties"
           [("xmlns:cp","http://schemas.openxmlformats.org/package/2006/metadata/core-properties")
@@ -214,11 +217,12 @@ styleToOpenXml style = parStyle : map toStyle alltoktypes
                                  $ backgroundColor style )
                              ]
 
-mkNumbering :: M.Map ListMarker Int -> [ListMarker] -> Element
-mkNumbering markers lists =
-  mknode "w:numbering" [("xmlns:w","http://schemas.openxmlformats.org/wordprocessingml/2006/main")]
-   $  map mkAbstractNum (M.toList markers)
-   ++ zipWith (mkNum markers) lists [1..(length lists)]
+mkNumbering :: M.Map ListMarker Int -> [ListMarker] -> IO Element
+mkNumbering markers lists = do
+  elts <- mapM mkAbstractNum (M.toList markers)
+  return $ mknode "w:numbering"
+     [("xmlns:w","http://schemas.openxmlformats.org/wordprocessingml/2006/main")]
+     $ elts ++ zipWith (mkNum markers) lists [1..(length lists)]
 
 mkNum :: M.Map ListMarker Int -> ListMarker -> Int -> Element
 mkNum markers marker numid =
@@ -232,10 +236,12 @@ mkNum markers marker numid =
               $ mknode "w:startOverride" [("w:val",show start)] ()) [0..6]
    where absnumid = maybe 0 id $ M.lookup marker markers
 
-mkAbstractNum :: (ListMarker,Int) -> Element
-mkAbstractNum (marker,numid) =
-  mknode "w:abstractNum" [("w:abstractNumId",show numid)]
-    $ mknode "w:multiLevelType" [("w:val","multilevel")] ()
+mkAbstractNum :: (ListMarker,Int) -> IO Element
+mkAbstractNum (marker,numid) = do
+  nsid <- randomRIO (0x10000000 :: Integer, 0xFFFFFFFF :: Integer)
+  return $ mknode "w:abstractNum" [("w:abstractNumId",show numid)]
+    $ mknode "w:nsid" [("w:val", printf "%8x" nsid)] ()
+    : mknode "w:multiLevelType" [("w:val","multilevel")] ()
     : map (mkLvl marker) [0..6]
 
 mkLvl :: ListMarker -> Int -> Element
@@ -333,11 +339,12 @@ blockToOpenXML opts (Header lev lst) = do
   contents <- withParaProp (pStyle $ "Heading" ++ show lev) $
                blockToOpenXML opts (Para lst)
   usedIdents <- gets stSectionIds
-  let ident = uniqueIdent lst usedIdents
-  modify $ \s -> s{ stSectionIds = ident : stSectionIds s }
-  let bookmarkStart = mknode "w:bookmarkStart" [("w:id",ident)
-                                               ,("w:name",ident)] ()
-  let bookmarkEnd = mknode "w:bookmarkEnd" [("w:id",ident)] ()
+  let bookmarkName = uniqueIdent lst usedIdents
+  modify $ \s -> s{ stSectionIds = bookmarkName : stSectionIds s }
+  id' <- liftIO $ hashUnique `fmap` newUnique
+  let bookmarkStart = mknode "w:bookmarkStart" [("w:id",show id')
+                                               ,("w:name",bookmarkName)] ()
+  let bookmarkEnd = mknode "w:bookmarkEnd" [("w:id",show id')] ()
   return $ [bookmarkStart] ++ contents ++ [bookmarkEnd]
 blockToOpenXML opts (Plain lst) = blockToOpenXML opts (Para lst)
 blockToOpenXML opts (Para x@[Image alt _]) = do
@@ -574,7 +581,7 @@ inlineToOpenXML _ (Code attrs str) =
                                      , mknode "w:t" [("xml:space","preserve")] tok ]
 inlineToOpenXML opts (Note bs) = do
   notes <- gets stFootnotes
-  let notenum = length notes + 1
+  notenum <- liftIO $ hashUnique `fmap` newUnique
   let notemarker = mknode "w:r" []
                    [ mknode "w:rPr" [] (rStyle "FootnoteReference")
                    , mknode "w:footnoteRef" [] () ]

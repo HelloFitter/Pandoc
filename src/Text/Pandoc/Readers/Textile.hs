@@ -127,6 +127,7 @@ blockParsers = [ codeBlock
                , header
                , blockQuote
                , hrule
+               , commentBlock
                , anyList
                , rawHtmlBlock
                , rawLaTeXBlock'
@@ -137,6 +138,12 @@ blockParsers = [ codeBlock
 -- | Any block in the order of definition of blockParsers
 block :: PMonad m => TextileParser m Block
 block = choice blockParsers <?> "block"
+
+commentBlock :: PMonad m => TextileParser m Block
+commentBlock = try $ do
+  string "###."
+  manyTill anyLine blanklines
+  return Null
 
 codeBlock :: PMonad m => TextileParser m Block
 codeBlock = codeBlockBc <|> codeBlockPre
