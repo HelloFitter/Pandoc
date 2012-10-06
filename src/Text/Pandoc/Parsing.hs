@@ -1,4 +1,5 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, RankNTypes, FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, RankNTypes, FlexibleInstances,
+             ScopedTypeVariables #-}
 {-
 Copyright (C) 2006-2010 John MacFarlane <jgm@berkeley.edu>
 
@@ -86,7 +87,7 @@ module Text.Pandoc.Parsing ( (>>~),
                              macro,
                              applyMacros',
                              Parser,
-                             PMonad,
+                             PMonad (..),
                              F(..),
                              runF,
                              askF,
@@ -163,14 +164,18 @@ import qualified Data.Set as Set
 import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.Identity
+import qualified Control.Exception as E
+import qualified Text.Pandoc.UTF8 as UTF8
 
 class Monad m => PMonad m where
   addMessage :: String -> m ()
   getFile    :: FilePath -> m String
 
 instance PMonad IO where
-  addMessage m = putStrLn m
-  getFile    f = readFile f
+  addMessage m = warn m
+  getFile    f = E.catch (UTF8.readFile f) $ \(e :: E.SomeException) ->
+                   do addMessage $ "Could not read `" ++ f ++ "'; skipping."
+                      return ""
 
 instance PMonad Identity where
   addMessage _ = return ()
