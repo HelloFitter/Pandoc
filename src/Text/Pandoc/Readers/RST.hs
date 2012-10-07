@@ -194,9 +194,9 @@ fieldList :: Monad m => RSTParser m Blocks
 fieldList = try $ do
   indent <- lookAhead $ many spaceChar
   items <- many1 $ fieldListItem indent
-  if null items
-     then return mempty
-     else return $ B.definitionList $ catMaybes items
+  case catMaybes items of
+     []     -> return mempty
+     items' -> return $ B.definitionList items'
 
 --
 -- line block
