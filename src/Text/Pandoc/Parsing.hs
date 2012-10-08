@@ -244,13 +244,16 @@ oneOfStrings strs = do
          | otherwise    -> (c:) `fmap` oneOfStrings strs'
 
 -- | Parses a space or tab.
+{-# SPECIALIZE spaceChar :: Parser [Char] st IO Char #-}
 spaceChar :: Monad m => Parser [Char] st m Char
 spaceChar = satisfy $ \c -> c == ' ' || c == '\t'
 
+{-# SPECIALIZE nonspaceChar :: Parser [Char] st IO Char #-}
 -- | Parses a nonspace, nonnewline character.
 nonspaceChar :: Monad m => Parser [Char] st m Char
 nonspaceChar = satisfy $ \x -> x /= '\t' && x /= '\n' && x /= ' ' && x /= '\r'
 
+{-# SPECIALIZE skipSpaces :: Parser [Char] st IO () #-}
 -- | Skips zero or more spaces or tabs.
 skipSpaces :: Monad m => Parser [Char] st m ()
 skipSpaces = skipMany spaceChar
@@ -298,6 +301,8 @@ lineClump :: Monad m => Parser [Char] st m String
 lineClump = blanklines
           <|> (many1 (notFollowedBy blankline >> anyLine) >>= return . unlines)
 
+{-# SPECIALIZE charsInBalanced :: Char -> Char -> Parser [Char] st IO Char
+                                               -> Parser [Char] st IO String #-}
 -- | Parse a string of characters between an open character
 -- and a close character, including text between balanced
 -- pairs of open and close, which must m be different. For example,
@@ -428,6 +433,7 @@ withHorizDisplacement parser = do
   pos2 <- getPosition
   return (result, sourceColumn pos2 - sourceColumn pos1)
 
+{-# SPECIALIZE withRaw :: Parser [Char] st IO a -> Parser [Char] st IO (a, [Char]) #-}
 -- | Applies a parser and returns the raw string that was parsed,
 -- along with the value produced by the parser.
 withRaw :: Monad m => Parser [Char] st m a -> Parser [Char] st m (a, [Char])
@@ -445,6 +451,7 @@ withRaw parser = do
                 ls   -> unlines (init ls) ++ take (c2 - 1) (last ls)
   return (result, raw)
 
+{-# SPECIALIZE escaped :: Parser [Char] st IO Char -> Parser [Char] st IO Char #-}
 -- | Parses backslash, then applies character parser.
 escaped :: Monad m => Parser [Char] st m Char  -- ^ Parser for character to escape
         -> Parser [Char] st m Char
@@ -782,13 +789,16 @@ defaultParserState =
                   stateMacros          = [],
                   stateRstDefaultRole  = "title-reference"}
 
+{-# SPECIALIZE getOption :: (ReaderOptions -> a) -> Parser [Char] ParserState IO a #-}
 getOption :: Monad m => (ReaderOptions -> a) -> Parser s ParserState m a
 getOption f = (f . stateOptions) `fmap` getState
 
+{-# SPECIALIZE guardEnabled :: Extension -> Parser [Char] ParserState IO () #-}
 -- | Succeed only if the extension is enabled.
 guardEnabled :: Monad m => Extension -> Parser s ParserState m ()
 guardEnabled ext = getOption readerExtensions >>= guard . Set.member ext
 
+{-# SPECIALIZE guardDisabled :: Extension -> Parser [Char] ParserState IO () #-}
 -- | Succeed only if the extension is disabled.
 guardDisabled :: Monad m => Extension -> Parser s ParserState m ()
 guardDisabled ext = getOption readerExtensions >>= guard . not . Set.member ext
@@ -822,10 +832,13 @@ type KeyTable = M.Map Key Target
 
 type SubstTable = M.Map Key Inlines
 
+{-# SPECIALIZE failUnlessSmart :: Parser [tok] ParserState IO () #-}
 -- | Fail unless we're in "smart typography" mode.
 failUnlessSmart :: Monad m => Parser [tok] ParserState m ()
 failUnlessSmart = getOption readerSmart >>= guard
 
+{-# SPECIALIZE smartPunctuation :: Parser [Char] ParserState IO Inline
+                                -> Parser [Char] ParserState IO Inline #-}
 smartPunctuation :: Monad m => Parser [Char] ParserState m Inline
                  -> Parser [Char] ParserState m Inline
 smartPunctuation inlineParser = do
@@ -879,6 +892,7 @@ charOrRef cs =
                        guard (c `elem` cs)
                        return c)
 
+{-# SPECIALIZE updateLastStrPos :: Parser [Char] ParserState IO () #-}
 updateLastStrPos :: Monad m => Parser [Char] ParserState m ()
 updateLastStrPos = getPosition >>= \p ->
   updateState $ \s -> s{ stateLastStrPos = Just p }
@@ -953,10 +967,10 @@ emDashOld = do
   try (charOrRef "\8212\151") <|> (try $ string "--" >> optional (char '-') >> return '-')
   return (Str "\8212")
 
+{-# SPECIALIZE nested :: Parser s ParserState IO a -> Parser s ParserState IO a #-}
 -- This is used to prevent exponential blowups for things like:
 -- a**a*a**a*a**a*a**a*a**a*a**a*a**
-nested :: Monad m => Parser s ParserState m a
-       -> Parser s ParserState m a
+nested :: Monad m => Parser s ParserState m a -> Parser s ParserState m a
 nested p = do
   nestlevel <- stateMaxNestingLevel `fmap` getState
   guard $ nestlevel > 0
