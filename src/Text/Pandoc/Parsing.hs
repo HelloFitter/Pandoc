@@ -208,6 +208,7 @@ instance Monoid a => Monoid (F a) where
 (>>~) :: (Monad m) => m a -> m b -> m a
 a >>~ b = a >>= \x -> b >> return x
 
+{-# SPECIALIZE anyLine :: Parser [Char] st IO [Char] #-}
 -- | Parse any line of text
 anyLine :: Monad m => Parser [Char] st m [Char]
 anyLine = manyTill anyChar newline
@@ -254,10 +255,12 @@ nonspaceChar = satisfy $ \x -> x /= '\t' && x /= '\n' && x /= ' ' && x /= '\r'
 skipSpaces :: Monad m => Parser [Char] st m ()
 skipSpaces = skipMany spaceChar
 
+{-# SPECIALIZE blankline :: Parser [Char] st IO Char #-}
 -- | Skips zero or more spaces or tabs, then reads a newline.
 blankline :: Monad m => Parser [Char] st m Char
 blankline = try $ skipSpaces >> newline
 
+{-# SPECIALIZE blanklines :: Parser [Char] st IO [Char] #-}
 -- | Parses one or more blank lines and returns a string of newlines.
 blanklines :: Monad m => Parser [Char] st m [Char]
 blanklines = many1 blankline
@@ -289,6 +292,7 @@ parseFromString parser str = do
   setPosition oldPos
   return result
 
+{-# SPECIALIZE lineClump :: Parser [Char] st IO String #-}
 -- | Parse raw line block up to and including blank lines.
 lineClump :: Monad m => Parser [Char] st m String
 lineClump = blanklines
