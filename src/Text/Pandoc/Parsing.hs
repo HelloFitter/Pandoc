@@ -213,6 +213,8 @@ a >>~ b = a >>= \x -> b >> return x
 anyLine :: Monad m => Parser [Char] st m [Char]
 anyLine = manyTill anyChar newline
 
+{-# SPECIALIZE many1Till :: Parser [Char] st IO a
+                         -> Parser [Char] st IO end -> Parser [Char] st IO [a] #-}
 -- | Like @manyTill@, but reads at least one item.
 many1Till :: Monad m => Parser [tok] st m a
           -> Parser [tok] st m end
@@ -222,6 +224,7 @@ many1Till p end = do
          rest <- manyTill p end
          return (first:rest)
 
+{-# SPECIALIZE notFollowedBy' :: Show b => Parser [a] st IO b -> Parser [a] st IO () #-}
 -- | A more general form of @notFollowedBy@.  This one allows any
 -- type of parser to be specified, and succeeds only if that parser fails.
 -- It does not consume any input.
