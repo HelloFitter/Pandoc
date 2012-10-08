@@ -222,6 +222,7 @@ outp off s = do           -- offset >= 0 (0 might be combining char)
                     , column = column st + off
                     , newlines = 0 }
 
+{-# SPECIALIZE render :: Maybe Int -> Doc -> String #-}
 -- | Renders a 'Doc'.  @render (Just n)@ will use
 -- a line length of @n@ to reflow text on breakable spaces.
 -- @render Nothing@ will not reflow text.
@@ -237,10 +238,12 @@ render linelen doc = fromString . mconcat . reverse . output $
                           , column = 0
                           , newlines = 2 }
 
+{-# SPECIALIZE renderDoc :: Doc -> DocState String #-}
 renderDoc :: (IsString a, Monoid a)
           => Doc -> DocState a
 renderDoc = renderList . toList . unDoc
 
+{-# SPECIALIZE renderDoc :: Doc -> DocState String #-}
 renderList :: (IsString a, Monoid a)
            => [D] -> DocState a
 renderList [] = return ()
