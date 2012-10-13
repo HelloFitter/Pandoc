@@ -208,7 +208,6 @@ instance Monoid a => Monoid (F a) where
 (>>~) :: (Monad m) => m a -> m b -> m a
 a >>~ b = a >>= \x -> b >> return x
 
-{-# SPECIALIZE anyLine :: Parser [Char] st IO [Char] #-}
 -- | Parse any line of text
 anyLine :: Monad m => Parser [Char] st m [Char]
 anyLine = manyTill anyChar newline
@@ -222,7 +221,6 @@ many1Till p end = do
          rest <- manyTill p end
          return (first:rest)
 
-{-# SPECIALIZE notFollowedBy' :: Show b => Parser [a] st IO b -> Parser [a] st IO () #-}
 -- | A more general form of @notFollowedBy@.  This one allows any
 -- type of parser to be specified, and succeeds only if that parser fails.
 -- It does not consume any input.
@@ -245,26 +243,21 @@ oneOfStrings strs = do
          | otherwise    -> (c:) `fmap` oneOfStrings strs'
 
 -- | Parses a space or tab.
-{-# SPECIALIZE spaceChar :: Parser [Char] st IO Char #-}
 spaceChar :: Monad m => Parser [Char] st m Char
 spaceChar = satisfy $ \c -> c == ' ' || c == '\t'
 
-{-# SPECIALIZE nonspaceChar :: Parser [Char] st IO Char #-}
 -- | Parses a nonspace, nonnewline character.
 nonspaceChar :: Monad m => Parser [Char] st m Char
 nonspaceChar = satisfy $ \x -> x /= '\t' && x /= '\n' && x /= ' ' && x /= '\r'
 
-{-# SPECIALIZE skipSpaces :: Parser [Char] st IO () #-}
 -- | Skips zero or more spaces or tabs.
 skipSpaces :: Monad m => Parser [Char] st m ()
 skipSpaces = skipMany spaceChar
 
-{-# SPECIALIZE blankline :: Parser [Char] st IO Char #-}
 -- | Skips zero or more spaces or tabs, then reads a newline.
 blankline :: Monad m => Parser [Char] st m Char
 blankline = try $ skipSpaces >> newline
 
-{-# SPECIALIZE blanklines :: Parser [Char] st IO [Char] #-}
 -- | Parses one or more blank lines and returns a string of newlines.
 blanklines :: Monad m => Parser [Char] st m [Char]
 blanklines = many1 blankline
@@ -296,7 +289,6 @@ parseFromString parser str = do
   setPosition oldPos
   return result
 
-{-# SPECIALIZE lineClump :: Parser [Char] st IO String #-}
 -- | Parse raw line block up to and including blank lines.
 lineClump :: Monad m => Parser [Char] st m String
 lineClump = blanklines
@@ -786,16 +778,13 @@ defaultParserState =
                   stateMacros          = [],
                   stateRstDefaultRole  = "title-reference"}
 
-{-# SPECIALIZE getOption :: (ReaderOptions -> a) -> Parser [Char] ParserState IO a #-}
 getOption :: Monad m => (ReaderOptions -> a) -> Parser s ParserState m a
 getOption f = (f . stateOptions) `fmap` getState
 
-{-# SPECIALIZE guardEnabled :: Extension -> Parser [Char] ParserState IO () #-}
 -- | Succeed only if the extension is enabled.
 guardEnabled :: Monad m => Extension -> Parser s ParserState m ()
 guardEnabled ext = getOption readerExtensions >>= guard . Set.member ext
 
-{-# SPECIALIZE guardDisabled :: Extension -> Parser [Char] ParserState IO () #-}
 -- | Succeed only if the extension is disabled.
 guardDisabled :: Monad m => Extension -> Parser s ParserState m ()
 guardDisabled ext = getOption readerExtensions >>= guard . not . Set.member ext
@@ -829,7 +818,6 @@ type KeyTable = M.Map Key Target
 
 type SubstTable = M.Map Key Inlines
 
-{-# SPECIALIZE failUnlessSmart :: Parser [tok] ParserState IO () #-}
 -- | Fail unless we're in "smart typography" mode.
 failUnlessSmart :: Monad m => Parser [tok] ParserState m ()
 failUnlessSmart = getOption readerSmart >>= guard
@@ -887,7 +875,6 @@ charOrRef cs =
                        guard (c `elem` cs)
                        return c)
 
-{-# SPECIALIZE updateLastStrPos :: Parser [Char] ParserState IO () #-}
 updateLastStrPos :: Monad m => Parser [Char] ParserState m ()
 updateLastStrPos = getPosition >>= \p ->
   updateState $ \s -> s{ stateLastStrPos = Just p }
