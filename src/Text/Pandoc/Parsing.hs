@@ -213,8 +213,6 @@ a >>~ b = a >>= \x -> b >> return x
 anyLine :: Monad m => Parser [Char] st m [Char]
 anyLine = manyTill anyChar newline
 
-{-# SPECIALIZE many1Till :: Parser [Char] st IO a
-                         -> Parser [Char] st IO end -> Parser [Char] st IO [a] #-}
 -- | Like @manyTill@, but reads at least one item.
 many1Till :: Monad m => Parser [tok] st m a
           -> Parser [tok] st m end
@@ -304,8 +302,6 @@ lineClump :: Monad m => Parser [Char] st m String
 lineClump = blanklines
           <|> (many1 (notFollowedBy blankline >> anyLine) >>= return . unlines)
 
-{-# SPECIALIZE charsInBalanced :: Char -> Char -> Parser [Char] st IO Char
-                                               -> Parser [Char] st IO String #-}
 -- | Parse a string of characters between an open character
 -- and a close character, including text between balanced
 -- pairs of open and close, which must m be different. For example,
@@ -436,7 +432,6 @@ withHorizDisplacement parser = do
   pos2 <- getPosition
   return (result, sourceColumn pos2 - sourceColumn pos1)
 
-{-# SPECIALIZE withRaw :: Parser [Char] st IO a -> Parser [Char] st IO (a, [Char]) #-}
 -- | Applies a parser and returns the raw string that was parsed,
 -- along with the value produced by the parser.
 withRaw :: Monad m => Parser [Char] st m a -> Parser [Char] st m (a, [Char])
@@ -454,7 +449,6 @@ withRaw parser = do
                 ls   -> unlines (init ls) ++ take (c2 - 1) (last ls)
   return (result, raw)
 
-{-# SPECIALIZE escaped :: Parser [Char] st IO Char -> Parser [Char] st IO Char #-}
 -- | Parses backslash, then applies character parser.
 escaped :: Monad m => Parser [Char] st m Char  -- ^ Parser for character to escape
         -> Parser [Char] st m Char
@@ -840,8 +834,6 @@ type SubstTable = M.Map Key Inlines
 failUnlessSmart :: Monad m => Parser [tok] ParserState m ()
 failUnlessSmart = getOption readerSmart >>= guard
 
-{-# SPECIALIZE smartPunctuation :: Parser [Char] ParserState IO Inline
-                                -> Parser [Char] ParserState IO Inline #-}
 smartPunctuation :: Monad m => Parser [Char] ParserState m Inline
                  -> Parser [Char] ParserState m Inline
 smartPunctuation inlineParser = do
@@ -970,7 +962,6 @@ emDashOld = do
   try (charOrRef "\8212\151") <|> (try $ string "--" >> optional (char '-') >> return '-')
   return (Str "\8212")
 
-{-# SPECIALIZE nested :: Parser s ParserState IO a -> Parser s ParserState IO a #-}
 -- This is used to prevent exponential blowups for things like:
 -- a**a*a**a*a**a*a**a*a**a*a**a*a**
 nested :: Monad m => Parser s ParserState m a -> Parser s ParserState m a
