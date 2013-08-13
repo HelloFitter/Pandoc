@@ -101,8 +101,11 @@ Data-Files:
                  data/dzslides/template.html,
                  -- data for citeproc
                  data/default.csl,
+                 -- lua code for lua scripts
+                 data/pandoc.lua,
+                 data/dkjson.lua,
                  -- sample lua custom writer
-                 data/sample.lua
+                 data/sample.lua,
                  -- documentation
                  README, INSTALL, COPYRIGHT, BUGS, CONTRIBUTING.md, changelog
 Extra-Source-Files:
@@ -354,6 +357,7 @@ Executable pandoc
                  highlighting-kate >= 0.5.5 && < 0.6,
                  aeson >= 0.6 && < 0.7,
                  HTTP >= 4000.0.5 && < 4000.3,
+                 hslua >= 0.3 && < 0.4,
                  citeproc-hs >= 0.3.7 && < 0.4
   Ghc-Options:   -rtsopts -with-rtsopts=-K16m -Wall -fno-warn-unused-do-bind
   Ghc-Prof-Options: -auto-all -caf-all -rtsopts -with-rtsopts=-K16m

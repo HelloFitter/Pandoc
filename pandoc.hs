@@ -61,6 +61,8 @@ import qualified Data.ByteString.Lazy as B
 import Text.CSL.Reference (Reference(..))
 import Data.Aeson (eitherDecode', encode)
 
+import Scripting.Lua as Lua hiding (concat)
+
 copyrightMessage :: String
 copyrightMessage = "\nCopyright (C) 2006-2013 John MacFarlane\n" ++
                     "Web:  http://johnmacfarlane.net/pandoc\n" ++
@@ -90,7 +92,22 @@ isTextFormat :: String -> Bool
 isTextFormat s = takeWhile (`notElem` "+-") s `notElem` ["odt","docx","epub","epub3"]
 
 externalFilter :: FilePath -> [String] -> Pandoc -> IO Pandoc
-externalFilter f args' d = E.catch
+externalFilter f args' d
+  | takeExtension f == ".lua" = do
+    luaScript <- readFile f
+    pandocLib <- readDataFileUTF8 Nothing "pandoc.lua"
+    lua <- Lua.newstate
+    Lua.openlibs lua
+    Lua.loadstring lua pandocLib "pandoc"
+    Lua.call lua 0 0
+    Lua.loadstring lua luaScript "script"
+    Lua.call lua 0 0
+    res <- callfunc lua "transform" (UTF8.toStringLazy $ encode d) args' >>=
+             return . either error id . eitherDecode' . UTF8.fromStringLazy
+    Lua.close lua
+    return res
+
+  | otherwise = E.catch
   (do (exitcode, outbs, errbs) <- pipeProcess Nothing f args' $ encode d
       case exitcode of
            ExitSuccess    -> return $ either error id $ eitherDecode' outbs
