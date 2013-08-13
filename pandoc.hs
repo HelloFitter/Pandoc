@@ -101,8 +101,11 @@ luaFilter scriptPath args' d = do
     pandocLib <- readDataFileUTF8 Nothing "pandoc.lua"
     lua <- Lua.newstate
     Lua.openlibs lua
-    Lua.loadstring lua pandocLib "pandoc"
-    Lua.call lua 0 0
+    Lua.loadstring lua pandocLib "pandoc.lua"
+    ec' <- Lua.call lua 0 0
+    if ec' == 0
+       then return ()
+       else Lua.peek lua (-1) >>= maybe (return ()) warn >> Lua.pop lua 1
     let format = case args' of
                       (x:_) -> x
                       _     -> ""
@@ -113,7 +116,7 @@ luaFilter scriptPath args' d = do
     ec <- Lua.call lua 0 0
     if ec == 0
        then return ()
-       else Lua.peek lua (-1) >>= maybe (return ()) warn
+       else Lua.peek lua (-1) >>= maybe (return ()) warn >> Lua.pop lua 1
     result <- Lua.callfunc lua "transform" jsondoc format >>=
             either (err 86 . show) return . eitherDecode' . UTF8.fromStringLazy
     Lua.close lua
