@@ -105,6 +105,9 @@ Data-Files:
                  data/pandoc.lua,
                  -- sample lua custom writer
                  data/sample.lua,
+                 -- sample lua scripts
+                 luascripts/caps.lua,
+                 luascripts/deemph.lua,
                  -- documentation
                  README, INSTALL, COPYRIGHT, BUGS, CONTRIBUTING.md, changelog
 Extra-Source-Files:

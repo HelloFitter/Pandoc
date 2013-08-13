@@ -1,3 +1,7 @@
+-- pandoc.lua
+-- This module contains most of David Heiko Kolf's dkjson.lua
+-- (license below), plus some functions to help with pandoc
+-- scripting in lua.
 
     -- Module options:
     local register_global_module_table = false
@@ -523,6 +527,24 @@ end
 
 -- pandoc-specific stuff
 
+-- Walk a JSON-encoded pandoc structure, performing
+-- 'action' on each object encountered, and possibly
+-- replacing or deleting it.  The 'format' parameter
+-- allows 'action' to be sensitive to the intended
+-- output format.
+--
+-- JSON-encoded pandoc Inline and Block objects have
+-- the structure {key: value}, where key is 'Str',
+-- 'Para', etc., and value is invariably an array.
+-- 'action' takes three parameters: the key of the
+-- current object, the value, and the intended output
+-- format.  It can return two values.  If the first
+-- value is nil, the object is left unchanged.  If
+-- the first value is the empty table {}, the object
+-- is deleted.  Otherwise, we expect the first value
+-- to be a key (possibly a different one) and the
+-- second a value.  The original object is replaced
+-- with a new object with the specified key and value.
 function walk(x, action, format)
   if type(x) == "table" then
     if x[1] then
@@ -534,7 +556,7 @@ function walk(x, action, format)
         local kk, vv = action(k,v,format)
         walk(vv, action, format)
         if kk then
-          if kk ~= "delete" then
+          if kk ~= {} then
             x[kk] = vv
           end
           if k ~= kk then
@@ -550,6 +572,9 @@ function walk(x, action, format)
   end
 end
 
+-- 'filter(action)' promotes an action (as described above)
+-- to a function that transforms a JSON-encoded pandoc
+-- structure.
 function filter(action)
   return function(text, format)
     local doc = json.decode(text)
