@@ -550,9 +550,10 @@ function walk(x, action, format)
   end
 end
 
-function toJSONFilter(action)
-  local text = io.read("*all")
-  local doc  = json.decode(text)
-  walk(doc, action, format)
-  io.write(json.encode(doc))
+function filter(action)
+  return function(text, format)
+    local doc = json.decode(text)
+    walk(doc, action, format)
+    return json.encode(doc)
+  end
 end

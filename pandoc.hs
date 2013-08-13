@@ -95,23 +95,29 @@ stripShebang :: String -> String
 stripShebang ('#':'!':xs) = drop 1 $ dropWhile (/='\n') xs
 stripShebang xs = xs
 
-runLuaInterpreter :: FilePath -> IO ExitCode
-runLuaInterpreter scriptPath = do
+luaFilter :: FilePath -> [String] -> Pandoc -> IO Pandoc
+luaFilter scriptPath args' d = do
     luaScript <- stripShebang `fmap` UTF8.readFile scriptPath
     pandocLib <- readDataFileUTF8 Nothing "pandoc.lua"
     lua <- Lua.newstate
     Lua.openlibs lua
     Lua.loadstring lua pandocLib "pandoc"
     Lua.call lua 0 0
+    let format = case args' of
+                      (x:_) -> x
+                      _     -> ""
+    let jsondoc = UTF8.toStringLazy $ encode d
+    Lua.push lua format
+    Lua.push lua jsondoc
     Lua.loadstring lua luaScript scriptPath
     ec <- Lua.call lua 0 0
     if ec == 0
        then return ()
-       else Lua.peek lua 1 >>= maybe (return ()) warn
+       else Lua.peek lua (-1) >>= maybe (return ()) warn
+    result <- Lua.callfunc lua "transform" jsondoc format >>=
+            either (err 86 . show) return . eitherDecode' . UTF8.fromStringLazy
     Lua.close lua
-    if ec == 0
-       then return ExitSuccess
-       else return $ ExitFailure ec
+    return result
 
 externalFilter :: FilePath -> [String] -> Pandoc -> IO Pandoc
 externalFilter f args' d = do
@@ -318,6 +324,15 @@ options =
                                                optPlugins opt })
                   "PROGRAM")
                  "" -- "External JSON filter"
+
+
+    , Option "" ["luafilter"]
+                 (ReqArg
+                  (\arg opt -> return opt { optPlugins = luaFilter arg :
+                                              optPlugins opt })
+                 "PROGRAM")
+                 "" -- "External JSON filter in lua with pandoc extensions"
+
 
     , Option "" ["normalize"]
                  (NoArg
@@ -766,12 +781,6 @@ options =
                  (NoArg
                   (\opt -> return opt { optIgnoreArgs = True }))
                  "" -- "Ignore command-line arguments."
-
-    , Option "" ["lua"]
-                 (ReqArg
-                  (\arg _ -> runLuaInterpreter arg >>= exitWith )
-                 "PATH")
-                 "" -- "Show help"
 
     , Option "v" ["version"]
                  (NoArg
