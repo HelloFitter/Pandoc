@@ -114,15 +114,17 @@ runLuaInterpreter scriptPath = do
        else return $ ExitFailure ec
 
 externalFilter :: FilePath -> [String] -> Pandoc -> IO Pandoc
-externalFilter f args' d =E.catch
-  (do (exitcode, outbs, errbs) <- pipeProcess Nothing f args' $ encode d
-      case exitcode of
-           ExitSuccess    -> return $ either error id $ eitherDecode' outbs
-           ExitFailure _  -> err 83 $ "Error running filter " ++ f ++
-                                      ": " ++ UTF8.toStringLazy outbs ++
-                                          UTF8.toStringLazy errbs)
-  (\e -> let _ = (e :: E.SomeException)
-         in err 83 $ "Error running filter " ++ f ++ ":\n" ++ show e)
+externalFilter f args' d = do
+  let handleProcess :: E.IOException -> IO a
+      handleProcess e = do warn $ "Error running filter " ++ f
+                           throwIO e
+  (exitcode, outbs, errbs) <- E.handle handleProcess
+                              $ pipeProcess Nothing f args' $ encode d
+  case exitcode of
+       ExitSuccess    -> return $ either error id $ eitherDecode' outbs
+       ExitFailure _  -> err 83 $ "Error running filter " ++ f ++
+                                  "\n" ++ UTF8.toStringLazy outbs ++
+                                      UTF8.toStringLazy errbs
 
 -- | Data structure for command line options.
 data Opt = Opt
