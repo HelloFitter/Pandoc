@@ -592,3 +592,16 @@ end
 function rawBlock(format, s)
   return {RawBlock = {{unFormat = format}, s}}
 end
+
+-- convenience function for creating attributes.
+-- attributes{id = "smith", classes = {"green", "square"}}.
+function attributes(attrs)
+  attrs = attrs or {}
+  local keyvals = {}
+  for k,v in pairs(attrs) do
+    if k ~= "id" and k ~= "classes" then
+      keyvals[k] = v
+    end
+  end
+  return {attrs.id or "", attrs.classes or {}, keyvals}
+end

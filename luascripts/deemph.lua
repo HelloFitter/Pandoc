@@ -7,7 +7,7 @@ end
 local function deemph(k,v,f)
   if k == 'Emph' and f == 'html' then
     walk(v,caps,f)
-    return 'Span', {{"",{},{}}, v}
+    return 'Span', {attributes{}, v}
   end
 end
 
