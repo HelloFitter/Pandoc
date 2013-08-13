@@ -582,3 +582,13 @@ function filter(action)
     return json.encode(doc)
   end
 end
+
+-- convenience function for creating RawInline elements.
+function rawInline(format, s)
+  return {RawInline = {{unFormat = format}, s}}
+end
+
+-- convenience function for creating RawBlock elements.
+function rawBlock(format, s)
+  return {RawBlock = {{unFormat = format}, s}}
+end
