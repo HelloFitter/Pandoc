@@ -103,7 +103,6 @@ Data-Files:
                  data/default.csl,
                  -- lua code for lua scripts
                  data/pandoc.lua,
-                 data/dkjson.lua,
                  -- sample lua custom writer
                  data/sample.lua,
                  -- documentation

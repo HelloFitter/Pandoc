@@ -91,23 +91,27 @@ wrapWords indent c = wrap' (c - indent) (c - indent)
 isTextFormat :: String -> Bool
 isTextFormat s = takeWhile (`notElem` "+-") s `notElem` ["odt","docx","epub","epub3"]
 
-externalFilter :: FilePath -> [String] -> Pandoc -> IO Pandoc
-externalFilter f args' d
-  | takeExtension f == ".lua" = do
-    luaScript <- readFile f
+stripShebang :: String -> String
+stripShebang ('#':'!':xs) = drop 1 $ dropWhile (/='\n') xs
+stripShebang xs = xs
+
+runLuaInterpreter :: FilePath -> IO ExitCode
+runLuaInterpreter scriptPath = do
+    luaScript <- stripShebang `fmap` UTF8.readFile scriptPath
     pandocLib <- readDataFileUTF8 Nothing "pandoc.lua"
     lua <- Lua.newstate
     Lua.openlibs lua
     Lua.loadstring lua pandocLib "pandoc"
     Lua.call lua 0 0
     Lua.loadstring lua luaScript "script"
-    Lua.call lua 0 0
-    res <- callfunc lua "transform" (UTF8.toStringLazy $ encode d) args' >>=
-             return . either error id . eitherDecode' . UTF8.fromStringLazy
+    ec <- Lua.call lua 0 0
     Lua.close lua
-    return res
+    if ec == 0
+       then return ExitSuccess
+       else return $ ExitFailure ec
 
-  | otherwise = E.catch
+externalFilter :: FilePath -> [String] -> Pandoc -> IO Pandoc
+externalFilter f args' d =E.catch
   (do (exitcode, outbs, errbs) <- pipeProcess Nothing f args' $ encode d
       case exitcode of
            ExitSuccess    -> return $ either error id $ eitherDecode' outbs
@@ -756,6 +760,12 @@ options =
                  (NoArg
                   (\opt -> return opt { optIgnoreArgs = True }))
                  "" -- "Ignore command-line arguments."
+
+    , Option "" ["lua"]
+                 (ReqArg
+                  (\arg _ -> runLuaInterpreter arg >>= exitWith )
+                 "PATH")
+                 "" -- "Show help"
 
     , Option "v" ["version"]
                  (NoArg
