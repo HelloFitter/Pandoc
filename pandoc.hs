@@ -103,8 +103,11 @@ runLuaInterpreter scriptPath = do
     Lua.openlibs lua
     Lua.loadstring lua pandocLib "pandoc"
     Lua.call lua 0 0
-    Lua.loadstring lua luaScript "script"
+    Lua.loadstring lua luaScript scriptPath
     ec <- Lua.call lua 0 0
+    if ec == 0
+       then return ()
+       else Lua.peek lua 1 >>= maybe (return ()) warn
     Lua.close lua
     if ec == 0
        then return ExitSuccess
@@ -115,10 +118,11 @@ externalFilter f args' d =E.catch
   (do (exitcode, outbs, errbs) <- pipeProcess Nothing f args' $ encode d
       case exitcode of
            ExitSuccess    -> return $ either error id $ eitherDecode' outbs
-           ExitFailure _  -> err 83 $ "Error running filter `" ++ UTF8.toStringLazy outbs ++
-                                          UTF8.toStringLazy errbs ++  "'")
+           ExitFailure _  -> err 83 $ "Error running filter " ++ f ++
+                                      ": " ++ UTF8.toStringLazy outbs ++
+                                          UTF8.toStringLazy errbs)
   (\e -> let _ = (e :: E.SomeException)
-         in err 83 $ "Error running filter `" ++ f ++ "'")
+         in err 83 $ "Error running filter " ++ f ++ ":\n" ++ show e)
 
 -- | Data structure for command line options.
 data Opt = Opt
