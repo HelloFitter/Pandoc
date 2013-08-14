@@ -108,6 +108,8 @@ Data-Files:
                  -- sample lua scripts
                  luascripts/caps.lua,
                  luascripts/deemph.lua,
+                 luascripts/myemph.lua,
+                 luascripts/comments.lua,
                  -- documentation
                  README, INSTALL, COPYRIGHT, BUGS, CONTRIBUTING.md, changelog
 Extra-Source-Files:

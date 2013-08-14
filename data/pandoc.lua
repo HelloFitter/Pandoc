@@ -527,6 +527,44 @@ end
 
 -- pandoc-specific stuff
 
+function isArray(x)
+  local mt = getmetatable(x) or {}
+  if type(x) ~= "table" then
+    return false
+  elseif mt.__jsontype == 'array' then
+    return true
+  elseif x[1] then
+    return true
+  else
+    return (x == {})
+  end
+end
+
+function isObject(x)
+  local mt = getmetatable(x) or {}
+  if type(x) ~= "table" then
+    return false
+  elseif mt.__jsontype == 'object' then
+    return true
+  elseif x[1] then
+    return false
+  else
+    return false
+  end
+end
+
+function emptyArray()
+  local array = {}
+  setmetatable(array, {__jsontype = 'array'})
+  return array
+end
+
+function emptyObject()
+  local obj = {}
+  setmetatable(obj, {__jsontype = 'object'})
+  return obj
+end
+
 -- Walk a JSON-encoded pandoc structure, performing
 -- 'action' on each object encountered, and possibly
 -- replacing or deleting it.  The 'format' parameter
@@ -546,29 +584,46 @@ end
 -- second a value.  The original object is replaced
 -- with a new object with the specified key and value.
 function walk(x, action, format)
-  if type(x) == "table" then
-    if x[1] then
-      for i,v in pairs(x) do
-        walk(v, action, format)
-      end
-    else
-      for k,v in pairs(x) do
-        local kk, vv = action(k,v,format)
-        walk(vv, action, format)
-        if kk then
-          if kk ~= {} then
-            x[kk] = vv
-          end
-          if k ~= kk then
-            x[k] = nil
-          end
-        else -- recurse
-          if type(v) == "table" then
-            walk(v, action, format)
+  if isArray(x) then
+    local array, j = {}, 1
+    setmetatable(array, {__jsontype = 'array'})
+    for _,w in pairs(x) do
+      if isObject(w) then
+        for kk,vv in pairs(w) do -- should be just one
+          local res, extra = action(kk, vv, format)
+          if res == nil then
+            array[j] = walk(w, action, format)
+            j = j + 1
+          elseif isArray(res) then
+            for _,z in pairs(res) do
+              array[j] = walk(z, action, format)
+              j = j + 1
+            end
+          elseif type(res) == "string" and extra then
+            local newobj = {[res] = walk(extra, action, format)}
+            setmetatable(newobj, {__jsontype = 'object'})
+            array[j] = newobj
+            j = j + 1
+          else
+            array[j] = walk(res, action, format)
+            j = j + 1
           end
         end
+      else
+        array[j] = walk(w, action, format)
+        j = j + 1
       end
     end
+    return array
+  elseif isObject(x) then
+    local obj = {}
+    setmetatable(obj, {__jsontype = 'object'})
+    for k,v in pairs(x) do
+      obj[k] = walk(v, action, format)
+    end
+    return obj
+  else  -- basic type
+    return x
   end
 end
 
@@ -578,8 +633,7 @@ end
 function filter(action)
   return function(text, format)
     local doc = json.decode(text)
-    walk(doc, action, format)
-    return json.encode(doc)
+    return json.encode(walk(doc, action, format))
   end
 end
 
