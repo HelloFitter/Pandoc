@@ -30,7 +30,8 @@ Conversion of 'Pandoc' documents to markdown-formatted plain text.
 
 Markdown:  <http://daringfireball.net/projects/markdown/>
 -}
-module Text.Pandoc.Writers.Markdown (writeMarkdown, writePlain) where
+module Text.Pandoc.Writers.Markdown (writeMarkdown, writePlain, writeGutenberg)
+where
 import Text.Pandoc.Definition
 import Text.Pandoc.Walk
 import Text.Pandoc.Templates (renderTemplate')
@@ -56,12 +57,14 @@ import qualified Data.Text as T
 
 type Notes = [[Block]]
 type Refs = [([Inline], Target)]
-data WriterState = WriterState { stNotes :: Notes
-                               , stRefs  :: Refs
-                               , stIds   :: [String]
-                               , stPlain :: Bool }
+data Variant = Markdown | PlainText | Gutenberg deriving Eq
+data WriterState = WriterState { stNotes   :: Notes
+                               , stRefs    :: Refs
+                               , stIds     :: [String]
+                               , stVariant :: Variant }
 instance Default WriterState
-  where def = WriterState{ stNotes = [], stRefs = [], stIds = [], stPlain = False }
+  where def = WriterState{ stNotes = [], stRefs = [], stIds = [],
+                           stVariant = Markdown }
 
 -- | Convert Pandoc to Markdown.
 writeMarkdown :: WriterOptions -> Pandoc -> String
@@ -77,25 +80,38 @@ writePlain :: WriterOptions -> Pandoc -> String
 writePlain opts document =
   evalState (pandocToMarkdown opts{
                  writerExtensions = Set.delete Ext_escaped_line_breaks $
+                                    Set.delete Ext_citations $
+                                    Set.delete Ext_markdown_in_html_blocks $
                                     writerExtensions opts }
-              document') def{ stPlain = True }
-    where document' = plainify document
+              document') def{ stVariant = PlainText }
+    where document' = plainify PlainText document
 
-plainify :: Pandoc -> Pandoc
-plainify = walk go
+-- | Convert Pandoc to plain text in format of Project Gutenberg.
+writeGutenberg :: WriterOptions -> Pandoc -> String
+writeGutenberg opts document =
+  evalState (pandocToMarkdown opts{
+                 writerExtensions = Set.delete Ext_escaped_line_breaks $
+                                    Set.delete Ext_citations $
+                                    Set.delete Ext_markdown_in_html_blocks $
+                                    writerExtensions opts }
+              document') def{ stVariant = Gutenberg }
+    where document' = plainify Gutenberg document
+
+plainify :: Variant -> Pandoc -> Pandoc
+plainify variant = walk go
   where go :: Inline -> Inline
-        go (Emph xs) = SmallCaps xs
-        go (Strong xs) = SmallCaps xs
-        go (Strikeout xs) = SmallCaps xs
-        go (Superscript xs) = SmallCaps xs
-        go (Subscript xs) = SmallCaps xs
-        go (SmallCaps xs) = SmallCaps xs
+        go (Emph xs) = Span nullAttr xs
+        go (Strong xs) = Span nullAttr xs
+        go (Strikeout xs) = Span nullAttr xs
+        go (Superscript xs) = Span nullAttr xs
+        go (Subscript xs) = Span nullAttr xs
+        go (SmallCaps xs) = Span nullAttr xs
         go (Code _ s) = Str s
         go (Math _ s) = Str s
         go (RawInline _ _) = Str ""
-        go (Link xs _) = SmallCaps xs
-        go (Image xs _) = SmallCaps $ [Str "["] ++ xs ++ [Str "]"]
-        go (Cite _ cits) = SmallCaps cits
+        go (Link xs _) = Span nullAttr xs
+        go (Image xs _) = Span nullAttr $ [Str "["] ++ xs ++ [Str "]"]
+        go (Cite _ cits) = Span nullAttr cits
         go x = x
 
 pandocTitleBlock :: Doc -> [Doc] -> Doc -> Doc
@@ -163,7 +179,7 @@ pandocToMarkdown opts (Pandoc meta blocks) = do
   let colwidth = if writerWrapText opts
                     then Just $ writerColumns opts
                     else Nothing
-  isPlain <- gets stPlain
+  variant <- gets stVariant
   metadata <- metaToJSON opts
                (fmap (render colwidth) . blockListToMarkdown opts)
                (fmap (render colwidth) . inlineListToMarkdown opts)
@@ -172,8 +188,10 @@ pandocToMarkdown opts (Pandoc meta blocks) = do
   let authors' = maybe [] (map text) $ getField "author" metadata
   let date' = maybe empty text $ getField "date" metadata
   let titleblock = case writerStandalone opts of
-                        True | isPlain ->
+                        True | variant == PlainText ->
                                 plainTitleBlock title' authors' date'
+                             | variant == Gutenberg ->
+                                undefined -- TODO
                              | isEnabled Ext_yaml_metadata_block opts ->
                                  yamlMetadataBlock metadata
                              | isEnabled Ext_pandoc_title_block opts ->
@@ -187,7 +205,7 @@ pandocToMarkdown opts (Pandoc meta blocks) = do
                then tableOfContents opts headerBlocks
                else empty
   -- Strip off final 'references' header if markdown citations enabled
-  let blocks' = if not isPlain && isEnabled Ext_citations opts
+  let blocks' = if isEnabled Ext_citations opts
                    then case reverse blocks of
                              (Div (_,["references"],_) _):xs -> reverse xs
                              _ -> blocks
@@ -308,9 +326,8 @@ blockToMarkdown :: WriterOptions -- ^ Options
                 -> State WriterState Doc
 blockToMarkdown _ Null = return empty
 blockToMarkdown opts (Div attrs ils) = do
-  isPlain <- gets stPlain
   contents <- blockListToMarkdown opts ils
-  return $ if isPlain || not (isEnabled Ext_markdown_in_html_blocks opts)
+  return $ if not (isEnabled Ext_markdown_in_html_blocks opts)
               then contents <> blankline
               else tagWithAttrs "div" attrs <> blankline <>
                       contents <> blankline <> "</div>" <> blankline
@@ -326,7 +343,8 @@ blockToMarkdown opts (Plain inlines) = do
                              | otherwise      = x : escapeDelimiter xs
       escapeDelimiter []                      = []
   let contents' = if isEnabled Ext_all_symbols_escapable opts &&
-                     not (stPlain st) && beginsWithOrderedListMarker rendered
+                     (stVariant st == Markdown) &&
+                       beginsWithOrderedListMarker rendered
                      then text $ escapeDelimiter rendered
                      else contents
   return $ contents' <> cr
@@ -338,16 +356,16 @@ blockToMarkdown opts (Para inlines) =
 blockToMarkdown opts (RawBlock f str)
   | f == "html" = do
     st <- get
-    if stPlain st
-       then return empty
-       else return $ if isEnabled Ext_markdown_attribute opts
+    if stVariant st == Markdown
+       then return $ if isEnabled Ext_markdown_attribute opts
                         then text (addMarkdownAttribute str) <> text "\n"
                         else text str <> text "\n"
+       else return empty
   | f `elem` ["latex", "tex", "markdown"] = do
     st <- get
-    if stPlain st
-       then return empty
-       else return $ text str <> text "\n"
+    if stVariant st == Markdown
+       then return $ text str <> text "\n"
+       else return empty
 blockToMarkdown _ (RawBlock _ _) = return empty
 blockToMarkdown _ HorizontalRule =
   return $ blankline <> text "* * * * *" <> blankline
@@ -378,7 +396,7 @@ blockToMarkdown opts (Header level attr inlines) = do
                   contents <> attr' <> cr <> text (replicate (offset contents) '-') <>
                   blankline
             -- ghc interprets '#' characters in column 1 as linenum specifiers.
-            _ | stPlain st || isEnabled Ext_literate_haskell opts ->
+            _ | stVariant st /= Markdown|| isEnabled Ext_literate_haskell opts ->
                 contents <> blankline
             _ -> text (replicate level '#') <> space <> contents <> attr' <> blankline
 blockToMarkdown opts (CodeBlock (_,classes,_) str)
@@ -413,9 +431,9 @@ blockToMarkdown opts (BlockQuote blocks) = do
   -- so they won't be interpreted as lhs...
   let leader = if isEnabled Ext_literate_haskell opts
                   then " > "
-                  else if stPlain st
-                          then "  "
-                          else "> "
+                  else if stVariant st == Markdown
+                          then "> "
+                          else "  "
   contents <- blockListToMarkdown opts blocks
   return $ (prefixed leader contents) <> blankline
 blockToMarkdown opts t@(Table caption aligns widths headers rows) =  do
@@ -605,7 +623,7 @@ definitionListItemToMarkdown opts (label, defs) = do
      then do
        let tabStop = writerTabStop opts
        st <- get
-       let leader  = if stPlain st then "   " else ":  "
+       let leader  = if stVariant st == Markdown then ":  " else "   "
        let sps = case writerTabStop opts - 3 of
                       n | n > 0   -> text $ replicate n ' '
                       _           -> text " "
@@ -669,9 +687,9 @@ inlineToMarkdown :: WriterOptions -> Inline -> State WriterState Doc
 inlineToMarkdown opts (Span attrs ils) = do
   st <- get
   contents <- inlineListToMarkdown opts ils
-  return $ if stPlain st
-              then contents
-              else tagWithAttrs "span" attrs <> contents <> text "</span>"
+  return $ if stVariant st == Markdown
+              then tagWithAttrs "span" attrs <> contents <> text "</span>"
+              else contents
 inlineToMarkdown opts (Emph lst) = do
   contents <- inlineListToMarkdown opts lst
   return $ "*" <> contents <> "*"
@@ -715,9 +733,9 @@ inlineToMarkdown opts (Code attr str) =
   in  return $ text (marker ++ spacer ++ str ++ spacer ++ marker) <> attrs
 inlineToMarkdown _ (Str str) = do
   st <- get
-  if stPlain st
-     then return $ text str
-     else return $ text $ escapeString str
+  if stVariant st == Markdown
+     then return $ text $ escapeString str
+     else return $ text str
 inlineToMarkdown opts (Math InlineMath str)
   | isEnabled Ext_tex_math_dollars opts =
       return $ "$" <> text str <> "$"

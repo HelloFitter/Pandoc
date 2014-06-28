@@ -82,6 +82,7 @@ module Text.Pandoc
                , writeJSON
                , writeMarkdown
                , writePlain
+               , writeGutenberg
                , writeRST
                , writeLaTeX
                , writeConTeXt
@@ -275,6 +276,7 @@ writers = [
   ,("markdown_github" , PureStringWriter writeMarkdown)
   ,("markdown_mmd" , PureStringWriter writeMarkdown)
   ,("plain"        , PureStringWriter writePlain)
+  ,("gutenberg"    , PureStringWriter writeGutenberg)
   ,("rst"          , PureStringWriter writeRST)
   ,("mediawiki"    , PureStringWriter writeMediaWiki)
   ,("textile"      , PureStringWriter writeTextile)
