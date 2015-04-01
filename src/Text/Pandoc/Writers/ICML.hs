@@ -90,6 +90,7 @@ lowerAlphaName    :: String
 upperAlphaName    :: String
 subListParName    :: String
 footnoteName      :: String
+citeName          :: String
 paragraphName     = "Paragraph"
 codeBlockName     = "CodeBlock"
 blockQuoteName    = "Blockquote"
@@ -112,6 +113,7 @@ lowerAlphaName    = "lowerAlpha"
 upperAlphaName    = "upperAlpha"
 subListParName    = "subParagraph"
 footnoteName      = "Footnote"
+citeName          = "Cite"
 
 
 -- | Convert Pandoc document to string in ICML format.
@@ -399,7 +401,7 @@ inlineToICML opts style (Subscript lst) = inlinesToICML opts (subscriptName:styl
 inlineToICML opts style (SmallCaps lst) = inlinesToICML opts (smallCapsName:style) lst
 inlineToICML opts style (Quoted SingleQuote lst) = inlinesToICML opts style $ [Str "‘"] ++ lst ++ [Str "’"]
 inlineToICML opts style (Quoted DoubleQuote lst) = inlinesToICML opts style $ [Str "“"] ++ lst ++ [Str "”"]
-inlineToICML opts style (Cite _ lst) = inlinesToICML opts style lst
+inlineToICML opts style (Cite _ lst) = inlinesToICML opts (citeName:style) lst
 inlineToICML _    style (Code _ str) = charStyle (codeName:style) $ text $ escapeStringForXML str
 inlineToICML _    style Space = charStyle style space
 inlineToICML _ style LineBreak = charStyle style $ text lineSeparator
