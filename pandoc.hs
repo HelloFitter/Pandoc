@@ -190,6 +190,7 @@ data Opt = Opt
     , optIgnoreArgs        :: Bool    -- ^ Ignore command-line arguments
     , optVerbose           :: Bool    -- ^ Verbose diagnostic output
     , optReferenceLinks    :: Bool    -- ^ Use reference links in writing markdown, rst
+    , optDpi               :: Int     -- ^ Dpi
     , optWrapText          :: Bool    -- ^ Wrap text
     , optColumns           :: Int     -- ^ Line length in characters
     , optFilters           :: [FilePath] -- ^ Filters to apply
@@ -252,6 +253,7 @@ defaultOpts = Opt
     , optIgnoreArgs            = False
     , optVerbose               = False
     , optReferenceLinks        = False
+    , optDpi                   = 96
     , optWrapText              = True
     , optColumns               = 72
     , optFilters               = []
@@ -447,6 +449,16 @@ options =
                      exitWith ExitSuccess)
                   "FILE")
                   "" -- "Print default data file"
+
+    , Option "" ["dpi"]
+                 (ReqArg
+                  (\arg opt ->
+                    case safeRead arg of
+                         Just t | t > 0 -> return opt { optDpi = t }
+                         _              -> err 31
+                                        "dpi must be a number greater than 0")
+                  "NUMBER")
+                 "" -- "Dpi (default 96)"
 
     , Option "" ["no-wrap"]
                  (NoArg
@@ -1009,8 +1021,8 @@ extractMedia media dir d =
           return $ walk (adjustImagePath dir fps) d
 
 adjustImagePath :: FilePath -> [FilePath] -> Inline -> Inline
-adjustImagePath dir paths (Image lab (src, tit))
-   | src `elem` paths = Image lab (dir ++ "/" ++ src, tit)
+adjustImagePath dir paths (Image attr lab (src, tit))
+   | src `elem` paths = Image attr lab (dir ++ "/" ++ src, tit)
 adjustImagePath _ _ x = x
 
 adjustMetadata :: M.Map String MetaValue -> Pandoc -> IO Pandoc
@@ -1084,6 +1096,7 @@ main = do
               , optIgnoreArgs            = ignoreArgs
               , optVerbose               = verbose
               , optReferenceLinks        = referenceLinks
+              , optDpi                   = dpi
               , optWrapText              = wrap
               , optColumns               = columns
               , optFilters               = filters
@@ -1303,6 +1316,7 @@ main = do
                             writerNumberOffset     = numberFrom,
                             writerSectionDivs      = sectionDivs,
                             writerReferenceLinks   = referenceLinks,
+                            writerDpi              = dpi,
                             writerWrapText         = wrap,
                             writerColumns          = columns,
                             writerEmailObfuscation = obfuscationMethod,
