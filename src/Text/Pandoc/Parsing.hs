@@ -161,7 +161,8 @@ module Text.Pandoc.Parsing ( anyLine,
                              setSourceColumn,
                              setSourceLine,
                              newPos,
-                             addWarning
+                             addWarning,
+                             extractIdClass
                              )
 where
 
@@ -1048,7 +1049,7 @@ newtype Key = Key String deriving (Show, Read, Eq, Ord)
 toKey :: String -> Key
 toKey = Key . map toLower . unwords . words
 
-type KeyTable = M.Map Key Target
+type KeyTable = M.Map Key (Target, Attr)
 
 type SubstTable = M.Map Key Inlines
 
@@ -1245,3 +1246,14 @@ addWarning mbpos msg =
 
 generalize :: (Monad m) => Parser s st a -> ParserT s st m a
 generalize m = mkPT (\ s -> (return $ (return . runIdentity) <$> runIdentity (runParsecT m s)))
+
+extractIdClass :: Attr -> Attr
+extractIdClass (ident, cls, kvs) = (ident', cls', kvs')
+  where
+    ident' = case (lookup "id" kvs) of
+               Just v  -> v
+               Nothing -> ident
+    cls'   = case (lookup "class" kvs) of
+               Just cl -> words cl
+               Nothing -> cls
+    kvs'  = filter (\(k,_) -> k /= "id" || k /= "class") kvs
