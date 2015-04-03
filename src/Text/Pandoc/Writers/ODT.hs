@@ -40,7 +40,7 @@ import Codec.Archive.Zip
 import Control.Applicative ((<$>))
 import Text.Pandoc.Options ( WriterOptions(..) )
 import Text.Pandoc.Shared ( stringify, readDataFile, fetchItem', warn )
-import Text.Pandoc.ImageSize ( imageSize, sizeInPoints )
+import Text.Pandoc.ImageSize ( imageSize, desiredSizeInPoints )
 import Text.Pandoc.MIME ( getMimeType, extensionFromMimeType )
 import Text.Pandoc.Definition
 import Text.Pandoc.Walk
@@ -127,7 +127,7 @@ writeODT opts doc@(Pandoc meta _) = do
   return $ fromArchive archive''
 
 transformPicMath :: WriterOptions -> IORef [Entry] -> Inline -> IO Inline
-transformPicMath opts entriesRef (Image lab (src,_)) = do
+transformPicMath opts entriesRef (Image attr lab (src,_)) = do
   res <- fetchItem' (writerMediaBag opts) (writerSourceURL opts) src
   case res of
      Left (_ :: E.SomeException) -> do
@@ -135,7 +135,7 @@ transformPicMath opts entriesRef (Image lab (src,_)) = do
        return $ Emph lab
      Right (img, mbMimeType) -> do
        let size = imageSize img
-       let (w,h) = fromMaybe (0,0) $ sizeInPoints `fmap` size
+       let (w,h) = maybe (0,0) (desiredSizeInPoints opts attr) size
        let tit' = show w ++ "x" ++ show h
        entries <- readIORef entriesRef
        let extension = fromMaybe (takeExtension $ takeWhile (/='?') src)
@@ -145,7 +145,7 @@ transformPicMath opts entriesRef (Image lab (src,_)) = do
        epochtime <- floor `fmap` getPOSIXTime
        let entry = toEntry newsrc epochtime $ toLazy img
        modifyIORef entriesRef (entry:)
-       return $ Image lab (newsrc, tit')
+       return $ Image attr lab (newsrc, tit')
 transformPicMath _ entriesRef (Math t math) = do
   entries <- readIORef entriesRef
   let dt = if t == InlineMath then DisplayInline else DisplayBlock

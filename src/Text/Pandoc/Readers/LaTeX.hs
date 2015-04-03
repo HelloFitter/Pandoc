@@ -239,28 +239,17 @@ block = (mempty <$ comment)
 blocks :: LP Blocks
 blocks = mconcat <$> many block
 
-getRawCommand :: String -> LP String
-getRawCommand name' = do
-  rawargs <- withRaw (skipopts *> option "" dimenarg *> many braced)
-  return $ '\\' : name' ++ snd rawargs
-
 blockCommand :: LP Blocks
 blockCommand = try $ do
   name <- anyControlSeq
   guard $ name /= "begin" && name /= "end"
   star <- option "" (string "*" <* optional sp)
   let name' = name ++ star
-  let raw = do
-        rawcommand <- getRawCommand name'
-        transformed <- applyMacros' rawcommand
-        guard $ transformed /= rawcommand
-        notFollowedBy $ parseFromString inlines transformed
-        parseFromString blocks transformed
   case M.lookup name' blockCommands of
        Just p      -> p
        Nothing     -> case M.lookup name blockCommands of
                            Just p    -> p
-                           Nothing   -> raw
+                           Nothing   -> mzero
 
 inBrackets :: Inlines -> Inlines
 inBrackets x = (str "[") <> x <> (str "]")
@@ -396,7 +385,8 @@ inlineCommand = try $ do
   star <- option "" (string "*")
   let name' = name ++ star
   let raw = do
-        rawcommand <- getRawCommand name'
+        rawargs <- withRaw (skipopts *> option "" dimenarg *> many braced)
+        let rawcommand = '\\' : name ++ star ++ snd rawargs
         transformed <- applyMacros' rawcommand
         if transformed /= rawcommand
            then parseFromString inlines transformed
@@ -1008,11 +998,11 @@ rawLaTeXInline = do
 
 addImageCaption :: Blocks -> LP Blocks
 addImageCaption = walkM go
-  where go (Image alt (src,tit)) = do
+  where go (Image attr alt (src,tit)) = do
           mbcapt <- stateCaption <$> getState
           case mbcapt of
-               Just ils -> return (Image (toList ils) (src, "fig:"))
-               Nothing  -> return (Image alt (src,tit))
+               Just ils -> return (Image attr (toList ils) (src, "fig:"))
+               Nothing  -> return (Image attr alt (src,tit))
         go x = return x
 
 addTableCaption :: Blocks -> LP Blocks
