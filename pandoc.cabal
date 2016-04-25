@@ -350,6 +350,7 @@ Library
                    Text.Pandoc.Writers.OpenDocument,
                    Text.Pandoc.Writers.Texinfo,
                    Text.Pandoc.Writers.Man,
+                   Text.Pandoc.Writers.Ms,
                    Text.Pandoc.Writers.Markdown,
                    Text.Pandoc.Writers.CommonMark,
                    Text.Pandoc.Writers.Haddock,
