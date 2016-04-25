@@ -170,7 +170,7 @@ blockToMs opts (Plain inlines) =
 blockToMs opts (Para inlines) = do
   contents <- liftM vcat $ mapM (inlineListToMs opts) $
     splitSentences inlines
-  return $ text ".PP" $$ contents
+  return $ text ".LP" $$ contents
 blockToMs _ (RawBlock f str)
   | f == Format "man" = return $ text str
   | otherwise         = return empty
