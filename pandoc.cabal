@@ -48,6 +48,7 @@ Data-Files:
                  data/templates/default.context
                  data/templates/default.texinfo
                  data/templates/default.man
+                 data/templates/default.ms
                  data/templates/default.markdown
                  data/templates/default.commonmark
                  data/templates/default.rst

@@ -67,11 +67,15 @@ changePathSeparators = intercalate "/" . splitDirectories
 #endif
 
 makePDF :: String              -- ^ pdf creator (pdflatex, lualatex,
-                               -- xelatex, context, wkhtmltopdf)
+                               -- xelatex, context, groff, wkhtmltopdf)
         -> (WriterOptions -> Pandoc -> String)  -- ^ writer
         -> WriterOptions       -- ^ options
         -> Pandoc              -- ^ document
         -> IO (Either ByteString ByteString)
+makePDF "groff" writer opts doc@(Pandoc meta _) = do
+  let source = writer opts doc
+  let args = []
+  ms2pdf (writerVerbose opts) args source
 makePDF "wkhtmltopdf" writer opts doc@(Pandoc meta _) = do
   let mathArgs = case writerHTMLMathMethod opts of
                  -- with MathJax, wait til all math is rendered:
@@ -263,6 +267,18 @@ runTeXProgram verbose program args runNumber numRuns tmpDir source = do
                    then (Just . B.fromChunks . (:[])) `fmap` BS.readFile pdfFile
                    else return Nothing
          return (exit, out <> err, pdf)
+
+ms2pdf    :: Bool         -- ^ Verbose output
+          -> [String]     -- ^ Args to groff
+          -> String       -- ^ groff ms source
+          -> IO (Either ByteString ByteString)
+ms2pdf verbose args source = do
+  let programArgs = ["-KUTF-8", "-ms", "-Tpdf"] ++ args
+  (exit, out, err) <- pipeProcess Nothing "groff"
+                       programArgs (UTF8.fromStringLazy source)
+  if exit == ExitSuccess
+     then return $ Right out
+     else return $ Left err
 
 html2pdf  :: Bool         -- ^ Verbose output
           -> [String]     -- ^ Args to wkhtmltopdf
