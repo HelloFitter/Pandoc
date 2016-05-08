@@ -74,7 +74,7 @@ makePDF :: String              -- ^ pdf creator (pdflatex, lualatex,
         -> IO (Either ByteString ByteString)
 makePDF "groff" writer opts doc@(Pandoc meta _) = do
   let source = writer opts doc
-  let args = []
+  let args = ["-t","-e"]
   ms2pdf (writerVerbose opts) args source
 makePDF "wkhtmltopdf" writer opts doc@(Pandoc meta _) = do
   let mathArgs = case writerHTMLMathMethod opts of
