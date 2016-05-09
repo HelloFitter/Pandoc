@@ -177,10 +177,10 @@ blockToMs _ (RawBlock f str)
 blockToMs _ HorizontalRule = return $ text ".PP" $$ text "   *   *   *   *   *"
 blockToMs opts (Header level _ inlines) = do
   contents <- inlineListToMs opts inlines
-  let heading = case level of
-                  1 -> ".SH "
-                  _ -> ".SS "
-  return $ text heading <> contents
+  let heading = if writerNumberSections opts
+                   then ".NH"
+                   else ".SH"
+  return $ text heading <> space <> text (show level) $$ contents
 blockToMs _ (CodeBlock _ str) = return $
   text ".IP" $$
   text ".nf" $$
